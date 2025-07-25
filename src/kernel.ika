@@ -1,0 +1,12 @@
+#include "vga.ika"
+
+fn kernel_main(magic: u32, mbinfo: u32) void {
+    vga_init();
+
+    puts("takos is running!\n");
+    puts("WAH!\n");
+
+    while (true) {
+        asm("hlt");
+    }
+}

@@ -1,0 +1,39 @@
+#if !MEM
+#define MEM
+
+fn memcpy(dest: *void, src: *void, n: u32) *void {
+    var _dest: []u8 = dest;
+    var _src: []u8 = src;
+
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        _dest[i] = _src[i];
+    }
+
+    return dest;
+}
+
+fn memset(dest: *void, c: i32, n: u32) *void {
+    var _dest: []u8 = dest;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        _dest[i] = c;
+    }
+}
+
+fn wmemset(dest: []u16, c: u16, n: u32) *void {
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        dest[i] = c;
+    }
+}
+
+fn strlen(s: []u8) u32 {
+    var i: u32 = 0;
+    while (s[i] != 0) {
+        i += 1;
+    }
+    return i;
+}
+
+#endif

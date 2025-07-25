@@ -1,0 +1,28 @@
+#if !VA_ARG
+#define VA_ARG
+
+struct va_list {
+    ptr: []u8,
+};
+
+fn _va_align(size: u32) u32 {
+    return ((size + 3) / 4) * 4;
+}
+
+fn va_start(ap: *va_list,
+            last_named_arg: *void,
+            size: u32) void {
+    ap.ptr = as([]u8, last_named_arg) + _va_align(size);
+}
+
+fn va_arg(ap: *va_list, size: u32) *void {
+    var arg: *void = ap.ptr;
+    ap.ptr += _va_align(size);
+    return arg;
+}
+
+fn va_end(ap: *va_list) void {
+    ap.ptr = null;
+}
+
+#endif

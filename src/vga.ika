@@ -1,0 +1,59 @@
+#if !VGA
+#define VGA
+
+#include "lib/mem.ika"
+
+const VGA_W = 80;
+const VGA_H = 25;
+const VGA_WHITE = 0x07;
+
+var vga_text: []u16;
+var vga_attribute: u8 = VGA_WHITE;
+var vga_cursor_x: u8 = 0;
+var vga_cursor_y: u8 = 0;
+
+fn cls() void {
+    var blank: u16 = ' ' | vga_attribute << 8;
+    wmemset(vga_text, blank, VGA_W * VGA_H);
+
+    vga_cursor_x = 0;
+    vga_cursor_y = 0;
+}
+
+fn putchar(c: u8) void {
+    if (c == 0x08) {
+        // backspace
+        if (vga_cursor_x != 0) {
+            vga_cursor_x -= 1;
+        }
+    } else if (c == '\t') {
+        vga_cursor_x = (vga_cursor_x + 8) & ~(8 - 1);
+    } else if (c == '\r') {
+        vga_cursor_x = 0;
+    } else if (c == '\n') {
+        vga_cursor_x = 0;
+        vga_cursor_y += 1;
+    } else if (c >= ' ') {
+        vga_text[vga_cursor_y * VGA_W + vga_cursor_x] = c | vga_attribute << 8;
+        vga_cursor_x += 1;
+    }
+
+    if (vga_cursor_x >= 80) {
+        vga_cursor_x = 0;
+        vga_cursor_y += 1;
+    }
+}
+
+fn puts(s: []u8) void {
+    var i: u32 = 0;
+    while (s[i] != 0) : (i += 1) {
+        putchar(s[i]);
+    }
+}
+
+fn vga_init() void {
+    vga_text = as([]u16, 0xB8000);
+    cls();
+}
+
+#endif
