@@ -1,8 +1,10 @@
+#include "gdt.ika"
 #include "console/vga_text.ika"
 
 #include "print.ika"
 
 fn kmain(magic: u32, mbinfo: u32) void {
+    gdt_install();
     vga_init();
 
     "takos is running! %s\n", "WAH!";
