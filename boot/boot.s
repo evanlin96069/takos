@@ -22,8 +22,8 @@ _start:
     ;  EBX = multiboot info structure pointer
     push ebx
     push eax
-    extern kernel_main
-    call kernel_main
+    extern kmain
+    call kmain
 
 .hang:
     cli

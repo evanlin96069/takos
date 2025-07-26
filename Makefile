@@ -1,42 +1,45 @@
-TARGET = kernel.bin
-ISO = takos.iso
-BUILD = build
-SRC := $(shell find src -name '*.ika')
-ISO_DIR= iso
-GRUB_DIR=$(ISO_DIR)/boot/grub
+TARGET        := kernel.bin
+BUILD         := build
+OBJDIR        := $(BUILD)/obj
+ISO_DIR       := $(BUILD)/iso
+BOOT_DIR      := $(ISO_DIR)/boot
+GRUB_DIR      := $(BOOT_DIR)/grub
+ISO           := takos.iso
 
-LDFLAGS = -nostdlib -z max-page-size=0x1000
+BOOT_ASM        := boot/boot.s
+LINKER_SCRIPT   := boot/linker.ld
+GRUB_CFG        := boot/grub.cfg
+
+SRC := $(shell find arch drivers kernel lib -name '*.ika')
+
+IKAC_FLAGS  := -S -e kmain -I arch/x86 -I drivers -I lib
+LDFLAGS     := -nostdlib -z max-page-size=0x1000
 
 all: $(ISO)
 
-$(BUILD):
-	mkdir -p $(BUILD)
+$(OBJDIR) $(BOOT_DIR) $(GRUB_DIR):
+	mkdir -p $@
 
-$(BUILD)/kernel.s: $(SRC) | $(BUILD)
-	ikac -S -e kernel_main -o $@ src/kernel.ika
+$(OBJDIR)/kernel.s: $(SRC) | $(OBJDIR)
+	ikac $(IKAC_FLAGS) -o $@ kernel/main.ika
 
-$(BUILD)/kernel.o: $(BUILD)/kernel.s
+$(OBJDIR)/kernel.o: $(OBJDIR)/kernel.s
 	clang -target i386-elf -c $< -o $@
 
-$(BUILD)/boot.o: src/boot.s | $(BUILD)
+$(OBJDIR)/boot.o: $(BOOT_ASM) | $(OBJDIR)
 	nasm -f elf32 $< -o $@
 
-$(BUILD)/$(TARGET): $(BUILD)/boot.o $(BUILD)/kernel.o
-	ld.lld -T linker.ld $(LDFLAGS) -o $@ $^
+$(BOOT_DIR)/$(TARGET): $(OBJDIR)/boot.o $(OBJDIR)/kernel.o $(LINKER_SCRIPT) | $(BOOT_DIR)
+	ld.lld -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $^
 
-iso: $(BUILD)/$(TARGET)
-	mkdir -p $(GRUB_DIR)
-	cp $< $(ISO_DIR)/boot/kernel.bin
-	cp grub/grub.cfg $(GRUB_DIR)/grub.cfg
-
-$(ISO): iso
+$(ISO): $(BOOT_DIR)/$(TARGET) $(GRUB_CFG)
+	cp $(GRUB_CFG) $(GRUB_DIR)/grub.cfg
 	grub-mkrescue -o $@ $(ISO_DIR)
 
 run: $(ISO)
 	qemu-system-i386 -cdrom $<
 
 clean:
-	rm -rf $(BUILD) iso
-	rm -f $(ISO)
+	rm -rf $(BUILD) $(ISO)
 
 .PHONY: all iso run clean

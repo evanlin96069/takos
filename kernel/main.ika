@@ -1,6 +1,8 @@
-#include "vga.ika"
+#include "console/vga_text.ika"
 
-fn kernel_main(magic: u32, mbinfo: u32) void {
+#include "print.ika"
+
+fn kmain(magic: u32, mbinfo: u32) void {
     vga_init();
 
     "takos is running! %s\n", "WAH!";

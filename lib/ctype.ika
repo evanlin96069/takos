@@ -1,0 +1,18 @@
+#if !CTYPE
+#define CTYPE
+
+fn toupper(ch: u8) u8 {
+    if (ch >= 'a' && ch <= 'z') {
+        ch = ch - 'a' + 'A';
+    }
+    return ch;
+}
+
+fn tolower(ch: u8) u8 {
+    if (ch >= 'A' && ch <= 'Z') {
+        ch = ch - 'A' + 'a';
+    }
+    return ch;
+}
+
+#endif
