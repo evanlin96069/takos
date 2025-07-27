@@ -1,5 +1,6 @@
 #include "gdt.ika"
 #include "idt.ika"
+#include "isr.ika"
 #include "irq.ika"
 
 #include "console.ika"
@@ -9,12 +10,15 @@
 fn kmain(magic: u32, mbinfo: u32) void {
     gdt_init();
     idt_init();
+    isr_init();
     irq_init();
     asm("sti");
 
     console_init();
 
     "takos is running! %s\n", "WAH!";
+
+    asm("int $3");
 
     while (true) {
         asm("hlt");

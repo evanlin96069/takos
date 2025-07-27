@@ -1,8 +1,6 @@
 #if !IDT
 #define IDT
 
-#include "print.ika"
-
 struct regs_t {
     gs: u32,
     fs: u32,
@@ -44,10 +42,6 @@ packed struct idt_ptr_t {
 var idt: [256]idt_entry_t;
 var idtp: idt_ptr_t;
 
-extern var isr_stub_table: [32]*void;
-
-var interrupt_handlers: [256]fn(regs: *regs_t) void;
-
 fn idt_set_gate(
     num: u8,
     base: u32,
@@ -67,88 +61,13 @@ fn idt_flush(idt_addr: u32) void {
     asm("lidt (%eax)");
 }
 
-fn register_interrupt_handler(
-    n: u8,
-    handler: fn(regs: *regs_t) void
-)void {
-    interrupt_handlers[n] = handler;
-}
-
-var exc_msg: [32][]u8;
-
-fn exc_msg_init() void {
-    exc_msg[0] = "Division-by-zero";
-    exc_msg[1] = "Debug";
-    exc_msg[2] = "Non-maskable interrupt";
-    exc_msg[3] = "Breakpoint";
-    exc_msg[4] = "Overflow";
-    exc_msg[5] = "Bound-range exceeded";
-    exc_msg[6] = "Invalid opcode";
-    exc_msg[7] = "Device not available";
-    exc_msg[8] = "Double fault";
-    exc_msg[9] = "Coprocessor seg overrun";
-    exc_msg[10] = "Invalid TSS";
-    exc_msg[11] = "Segment not present";
-    exc_msg[12] = "Stack-segment fault";
-    exc_msg[13] = "General protection fault";
-    exc_msg[14] = "Page fault";
-    exc_msg[15] = "Reserved";
-    exc_msg[16] = "x87 FPU error";
-    exc_msg[17] = "Alignment check";
-    exc_msg[18] = "Machine-check";
-    exc_msg[19] = "SIMD FP exception";
-    exc_msg[20] = "Virtualisation";
-    exc_msg[21] = "Security";
-    exc_msg[22] = "Triple fault";
-    exc_msg[23] = "FPU assist";
-    exc_msg[24] = "Reserved";
-    exc_msg[25] = "Reserved";
-    exc_msg[26] = "Reserved";
-    exc_msg[27] = "Reserved";
-    exc_msg[28] = "Reserved";
-    exc_msg[29] = "Reserved";
-    exc_msg[30] = "Reserved";
-    exc_msg[31] = "Reserved";
-}
-
-fn isr_handler(r: *regs_t) void {
-    printf("int %d\n", r.int_no);
-    if (r.int_no >= 32) {
-        return;
-    }
-
-    if (interrupt_handlers[r.int_no] != null) {
-        interrupt_handlers[r.int_no](r);
-        return;
-    }
-
-    "\n*** EXCEPTION: %s ***\n", exc_msg[r.int_no];
-    "Halting...\n";
-
-    while (true) {
-        asm("hlt");
-    }
-}
-
 fn idt_init() void {
-    exc_msg_init();
-
     idtp.limit = sizeof([256]idt_entry_t) - 1;
     idtp.base = as(u32, &idt);
 
     var i: u32 = 0;
     while (i < 256) : (i += 1) {
         idt_set_gate(i, 0, 0x08, 0x8E);
-    }
-
-    i = 0;
-    while (i < 32) : (i += 1) {
-        idt_set_gate(
-            i,
-            as(u32, isr_stub_table[i]),
-            0x08,
-            0x8E
-        );
     }
 
     idt_flush(as(u32, &idtp));
