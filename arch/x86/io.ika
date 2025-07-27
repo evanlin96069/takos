@@ -9,9 +9,9 @@ fn inb(port: u16) u8 {
     return result;
 }
 
-fn outb(value: u8, port: u16) void {
-    asm("movb 8(%ebp), %al"); // value
-    asm("movw 12(%ebp), %dx"); // port
+fn outb(port: u16, value: u8) void {
+    asm("movb 12(%ebp), %al"); // value
+    asm("movw 8(%ebp), %dx"); // port
     asm("outb %al, %dx");
 }
 

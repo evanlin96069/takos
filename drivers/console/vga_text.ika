@@ -48,10 +48,10 @@ fn _vga_scroll() void {
 
 fn _vga_move_cursor() void {
     var temp: u16 = vga_cursor_y * VGA_W + vga_cursor_x;
-    outb(CURSOR_HIGH, CRTC_ADDR);
-    outb(temp >> 8, CRTC_DATA);
-    outb(CURSOR_LOW, CRTC_ADDR);
-    outb(temp & 0xFF, CRTC_DATA);
+    outb(CRTC_ADDR, CURSOR_HIGH);
+    outb(CRTC_DATA, temp >> 8);
+    outb(CRTC_ADDR, CURSOR_LOW);
+    outb(CRTC_DATA, temp & 0xFF);
 }
 
 fn vga_clear() void {
@@ -101,13 +101,13 @@ fn vga_init() void {
     vga_text = as([]u16, 0xB8000);
 
     // enable cursor
-    outb(0x0A, CRTC_ADDR);
+    outb(CRTC_ADDR, 0x0A);
     var start: u8 = inb(CRTC_DATA) & 0xC0;
-    outb(start | 0, CRTC_DATA);
+    outb(CRTC_DATA, start | 0);
 
-    outb(0x0B, CRTC_ADDR);
+    outb(CRTC_ADDR, 0x0B);
     var end: u8 = inb(CRTC_DATA) & 0xC0;
-    outb(start | 15, CRTC_DATA);
+    outb(CRTC_DATA, start | 15);
 
     vga_clear();
 }
