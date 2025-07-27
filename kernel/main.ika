@@ -2,7 +2,7 @@
 #include "idt.ika"
 #include "irq.ika"
 
-#include "console/vga_text.ika"
+#include "console.ika"
 
 #include "print.ika"
 
@@ -11,8 +11,8 @@ fn kmain(magic: u32, mbinfo: u32) void {
     idt_init();
     irq_init();
     asm("sti");
-    vga_init();
 
+    console_init();
 
     "takos is running! %s\n", "WAH!";
 

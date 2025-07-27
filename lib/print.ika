@@ -1,13 +1,14 @@
 #if !PRINT
 #define PRINT
 
-#include "console/vga_text.ika"
+#include "console.ika"
 
 #include "va_arg.ika"
 #include "ctype.ika"
 
 fn putchar(c: u8) i32 {
-    return vga_putc(c);
+    console_putc(c);
+    return c;
 }
 
 fn puts(s: []u8) i32 {

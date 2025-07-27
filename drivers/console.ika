@@ -1,0 +1,23 @@
+#if !CONSOLE
+#define CONSOLE
+
+#include "vga_text.ika"
+
+var putc_fn: fn(c: u8) void;
+var clear_fn: fn() void;
+
+fn console_init() void {
+    vga_init();
+    putc_fn = vga_putc;
+    clear_fn = vga_clear;
+}
+
+fn console_putc(c: u8) void {
+    putc_fn(c);
+}
+
+fn console_clear() void {
+    clear_fn();
+}
+
+#endif

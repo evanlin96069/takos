@@ -63,7 +63,7 @@ fn vga_clear() void {
     _vga_move_cursor();
 }
 
-fn vga_putc(c: u8) i32 {
+fn vga_putc(c: u8) void {
     if (c == 0x08) {
         // backspace
         if (vga_cursor_x != 0) {
@@ -88,8 +88,6 @@ fn vga_putc(c: u8) i32 {
 
     _vga_scroll();
     _vga_move_cursor();
-
-    return c;
 }
 
 
