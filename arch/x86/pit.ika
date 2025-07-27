@@ -1,0 +1,48 @@
+#if !PIT
+#define PIT
+
+#include "irq.ika"
+#include "io.ika"
+
+const PIT_BASE_FREQ = 1193182;
+const PIT_CMD = 0x43;
+const PIT_CH0 = 0x40;
+
+var _pit_cb: fn() void = null;
+
+fn _pit_irq_cb(r: *regs_t) void {
+    if (_pit_cb != null) {
+        _pit_cb();
+    }
+}
+
+fn pit_install_callback(cb: fn() void) void {
+    _pit_cb = cb;
+}
+
+var _pit_freq: u32 = 0;
+
+fn pit_set_frequency(hz: u32) void {
+    if (hz == 0) {
+        return;
+    }
+
+    var div: u16 = PIT_BASE_FREQ / hz;
+
+    outb(PIT_CMD, 0x36);
+    outb(PIT_CH0, div & 0xFF);
+    outb(PIT_CH0, div >> 8);
+
+    _pit_freq = hz;
+}
+
+fn pit_get_frequency() u32 {
+    return _pit_freq;
+}
+
+fn pit_init(hz: u32) void {
+    pit_set_frequency(hz);
+    irq_install_handler(0, _pit_irq_cb); // IRQ0 == PIT
+}
+
+#endif

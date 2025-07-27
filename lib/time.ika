@@ -1,0 +1,18 @@
+#if !TIME
+#define TIME
+
+#include "timer.ika"
+
+fn clock() u32 {
+    return timer_ticks();
+}
+
+fn sleep(ms: u32) void {
+    var t0: u32 = timer_ticks();
+    var wait: u32 = ms * timer_hz() / 1000;
+    while (timer_ticks()  - t0 < wait) {
+        asm("hlt");
+    }
+}
+
+#endif

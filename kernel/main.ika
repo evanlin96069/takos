@@ -4,23 +4,30 @@
 #include "irq.ika"
 
 #include "console.ika"
+#include "timer.ika"
 
 #include "print.ika"
+#include "time.ika"
 
 fn kmain(magic: u32, mbinfo: u32) void {
     gdt_init();
     idt_init();
     isr_init();
     irq_init();
-    asm("sti");
 
     console_init();
+    timer_init(100);
+    asm("sti");
 
     "takos is running! %s\n", "WAH!";
 
-    asm("int $3");
-
-    while (true) {
-        asm("hlt");
+    var i: u32 = 1;
+    while (true) : (i += 1) {
+        sleep(1000);
+        if (i == 1) {
+            "%d second has passed\n", i;
+        } else {
+            "%d seconds have passed\n", i;
+        }
     }
 }
