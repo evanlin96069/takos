@@ -1,10 +1,13 @@
 #include "gdt.ika"
+#include "idt.ika"
 #include "console/vga_text.ika"
 
 #include "print.ika"
 
 fn kmain(magic: u32, mbinfo: u32) void {
-    gdt_install();
+    gdt_init();
+    idt_init();
+
     vga_init();
 
     "takos is running! %s\n", "WAH!";

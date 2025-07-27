@@ -1,7 +1,7 @@
 #if !GDT
 #define GDT
 
-packed struct gdt_entry {
+packed struct gdt_entry_t {
     limit_low: u16,
     base_low: u16,
     base_middle: u8,
@@ -10,13 +10,13 @@ packed struct gdt_entry {
     base_high: u8,
 };
 
-packed struct gdt_ptr {
+packed struct gdt_ptr_t {
     limit: u16,
     base: u32,
 };
 
-var gdt: [3]gdt_entry;
-var gdtp: gdt_ptr;
+var gdt: [3]gdt_entry_t;
+var gdtp: gdt_ptr_t;
 
 fn gdt_set_gate(
     i: u32,
@@ -49,8 +49,8 @@ fn gdt_flush(gdt_addr: u32) void {
     asm("1:");
 }
 
-fn gdt_install() void {
-    gdtp.limit = sizeof([3]gdt_entry) - 1;
+fn gdt_init() void {
+    gdtp.limit = sizeof([3]gdt_entry_t) - 1;
     gdtp.base  = as(u32, &gdt);
 
     // 0: Null descriptor
