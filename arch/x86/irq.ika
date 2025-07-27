@@ -1,0 +1,45 @@
+#if !IRQ
+#define IRQ
+
+#include "idt.ika"
+#include "pic.ika"
+
+var irq_handlers: [16]fn(r: *regs_t) void;
+
+extern var irq_stub_table: [16]*void;
+
+fn irq_init() void {
+    pic_remap(0x20, 0x28);
+
+    var i: u32 = 0;
+    while (i < 16) : (i += 1) {
+        idt_set_gate(
+            32 + i,
+            as(u32, irq_stub_table[i]),
+            0x08,
+            0x8E
+        );
+    }
+}
+
+fn irq_install_handler(
+    irq: u8,
+    h: fn(r: *regs_t) void
+) void {
+    irq_handlers[irq] = h;
+}
+
+fn irq_uninstall_handler(irq: u8) void {
+    irq_handlers[irq] = null;
+}
+
+fn irq_handler(r: *regs_t) void {
+    var irq: u8 = r.int_no - 32;
+    if (irq_handlers[irq] != null) {
+        irq_handlers[irq](r);
+    }
+
+    pic_send_eoi(irq);
+}
+
+#endif
