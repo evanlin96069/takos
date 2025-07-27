@@ -1,0 +1,28 @@
+#if !PS2
+#define PS2
+
+#include "irq.ika"
+#include "io.ika"
+
+var _ps2_cb: fn(sc: u8) void = null;
+
+fn _ps2_irq_cb(r: *regs_t) void {
+    if ((inb(0x64) & 1) == 0) {
+        return;
+    }
+
+    var sc: u8 = inb(0x60);
+    if (_ps2_cb != null) {
+        _ps2_cb(sc);
+    }
+}
+
+fn ps2_install_callback(cb: fn(sc: u8) void) void {
+    _ps2_cb = cb;
+}
+
+fn ps2_init() void {
+    irq_install_handler(1, _ps2_irq_cb);
+}
+
+#endif

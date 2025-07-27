@@ -5,8 +5,10 @@
 
 #include "console.ika"
 #include "timer.ika"
+#include "kbd.ika"
 
 #include "print.ika"
+#include "getc.ika"
 #include "time.ika"
 
 fn kmain(magic: u32, mbinfo: u32) void {
@@ -17,9 +19,19 @@ fn kmain(magic: u32, mbinfo: u32) void {
 
     console_init();
     timer_init(100);
+    kbd_init();
     asm("sti");
 
     "takos is running! %s\n", "WAH!";
+
+    "Type something: ";
+    while (true) {
+        var c: i32 = getchar();
+        putchar(c);
+        if (c == '\n') {
+            break;
+        }
+    }
 
     var i: u32 = 1;
     while (true) : (i += 1) {

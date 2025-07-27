@@ -1,0 +1,196 @@
+#if !KBD
+#define KBD
+
+#include "ps2.ika"
+
+#include "string.ika"
+
+const KBD_BUF = 128;
+var _kbd_buf: [KBD_BUF]u8;
+var _kbd_head: u32 = 0;
+var _kbd_tail: u32 = 0;
+
+fn _kbd_push(c: u8) void {
+    var next: u32 = (_kbd_head + 1) % KBD_BUF;
+    if (next != _kbd_tail) {
+        _kbd_buf[_kbd_head] = c;
+        _kbd_head = next;
+    }
+}
+
+fn _kbd_pop() i32 {
+    if (_kbd_head == _kbd_tail) {
+        return -1;
+    }
+    var c: u8 = _kbd_buf[_kbd_tail];
+    _kbd_tail = (_kbd_tail + 1) % KBD_BUF;
+    return as(i32, c) & 0xFF;
+}
+
+var _kbd_shift: bool = false;
+var _kbd_keymap: [128]u8;
+var _kbd_keymap_shift: [128]u8;
+
+fn _kbt_init_keymap() void {
+    memset(&_kbd_keymap, 0, sizeof([128]u8)) ;
+    memset(&_kbd_keymap_shift, 0, sizeof([128]u8)) ;
+
+    _kbd_keymap[1] = 27; // ESC
+    _kbd_keymap[2] = '1';
+    _kbd_keymap[3] = '2';
+    _kbd_keymap[4] = '3';
+    _kbd_keymap[5] = '4';
+    _kbd_keymap[6] = '5';
+    _kbd_keymap[7] = '6';
+    _kbd_keymap[8] = '7';
+    _kbd_keymap[9] = '8';
+    _kbd_keymap[10] = '9';
+    _kbd_keymap[11] = '0';
+    _kbd_keymap[12] = '-';
+    _kbd_keymap[13] = '=';
+    _kbd_keymap[14] = 8; // Backspace
+    _kbd_keymap[15] = '\t'; // Tab
+    _kbd_keymap[16] = 'q';
+    _kbd_keymap[17] = 'w';
+    _kbd_keymap[18] = 'e';
+    _kbd_keymap[19] = 'r';
+    _kbd_keymap[20] = 't';
+    _kbd_keymap[21] = 'y';
+    _kbd_keymap[22] = 'u';
+    _kbd_keymap[23] = 'i';
+    _kbd_keymap[24] = 'o';
+    _kbd_keymap[25] = 'p';
+    _kbd_keymap[26] = '[';
+    _kbd_keymap[27] = ']';
+    _kbd_keymap[28] = '\n'; // Enter
+    _kbd_keymap[30] = 'a';
+    _kbd_keymap[31] = 's';
+    _kbd_keymap[32] = 'd';
+    _kbd_keymap[33] = 'f';
+    _kbd_keymap[34] = 'g';
+    _kbd_keymap[35] = 'h';
+    _kbd_keymap[36] = 'j';
+    _kbd_keymap[37] = 'k';
+    _kbd_keymap[38] = 'l';
+    _kbd_keymap[39] = ';';
+    _kbd_keymap[40] = '\'';
+    _kbd_keymap[41] = '`';
+    _kbd_keymap[43] = '\\';
+    _kbd_keymap[44] = 'z';
+    _kbd_keymap[45] = 'x';
+    _kbd_keymap[46] = 'c';
+    _kbd_keymap[47] = 'v';
+    _kbd_keymap[48] = 'b';
+    _kbd_keymap[49] = 'n';
+    _kbd_keymap[50] = 'm';
+    _kbd_keymap[51] = ',';
+    _kbd_keymap[52] = '.';
+    _kbd_keymap[53] = '/';
+    _kbd_keymap[55] = '*'; // Keypad *
+    _kbd_keymap[57] = ' '; // Space
+    _kbd_keymap[74] = '-';
+    _kbd_keymap[78] = '=';
+
+    // shifted
+    _kbd_keymap_shift[1] = 27; // ESC
+    _kbd_keymap_shift[2] = '!';
+    _kbd_keymap_shift[3] = '@';
+    _kbd_keymap_shift[4] = '#';
+    _kbd_keymap_shift[5] = '$';
+    _kbd_keymap_shift[6] = '%';
+    _kbd_keymap_shift[7] = '^';
+    _kbd_keymap_shift[8] = '&';
+    _kbd_keymap_shift[9] = '*';
+    _kbd_keymap_shift[10] = '(';
+    _kbd_keymap_shift[11] = ')';
+    _kbd_keymap_shift[12] = '_';
+    _kbd_keymap_shift[13] = '+';
+    _kbd_keymap_shift[14] = 8;
+    _kbd_keymap_shift[15] = '\t';
+    _kbd_keymap_shift[16] = 'Q';
+    _kbd_keymap_shift[17] = 'W';
+    _kbd_keymap_shift[18] = 'E';
+    _kbd_keymap_shift[19] = 'R';
+    _kbd_keymap_shift[20] = 'T';
+    _kbd_keymap_shift[21] = 'Y';
+    _kbd_keymap_shift[22] = 'U';
+    _kbd_keymap_shift[23] = 'I';
+    _kbd_keymap_shift[24] = 'O';
+    _kbd_keymap_shift[25] = 'P';
+    _kbd_keymap_shift[26] = '{';
+    _kbd_keymap_shift[27] = '}';
+    _kbd_keymap_shift[28] = '\n';
+    _kbd_keymap_shift[30] = 'A';
+    _kbd_keymap_shift[31] = 'S';
+    _kbd_keymap_shift[32] = 'D';
+    _kbd_keymap_shift[33] = 'F';
+    _kbd_keymap_shift[34] = 'G';
+    _kbd_keymap_shift[35] = 'H';
+    _kbd_keymap_shift[36] = 'J';
+    _kbd_keymap_shift[37] = 'K';
+    _kbd_keymap_shift[38] = 'L';
+    _kbd_keymap_shift[39] = ':';
+    _kbd_keymap_shift[40] = '"';
+    _kbd_keymap_shift[41] = '~';
+    _kbd_keymap_shift[43] = '|';
+    _kbd_keymap_shift[44] = 'Z';
+    _kbd_keymap_shift[45] = 'X';
+    _kbd_keymap_shift[46] = 'C';
+    _kbd_keymap_shift[47] = 'V';
+    _kbd_keymap_shift[48] = 'B';
+    _kbd_keymap_shift[49] = 'N';
+    _kbd_keymap_shift[50] = 'M';
+    _kbd_keymap_shift[51] = '<';
+    _kbd_keymap_shift[52] = '>';
+    _kbd_keymap_shift[53] = '?';
+    _kbd_keymap_shift[55] = '*';
+    _kbd_keymap_shift[57] = ' ';
+    _kbd_keymap_shift[74] = '_';
+    _kbd_keymap_shift[78] = '+';
+}
+
+fn _kbd_cb(sc: u8) void {
+    if ((sc & 0x80) != 0) {
+        // key-up
+        sc &= 0x7F;
+        if (sc == 42 || sc == 54) {
+            _kbd_shift = false;
+        }
+        return;
+    }
+
+    if (sc == 42 || sc == 54) {
+        _kbd_shift = true;
+        return;
+    }
+
+    var ch: u8;
+    if (_kbd_shift) {
+        ch = _kbd_keymap_shift[sc];
+    } else {
+        ch = _kbd_keymap[sc];
+    }
+
+    if (ch != 0) {
+        _kbd_push(ch);
+    }
+}
+
+fn kbd_init() void {
+    _kbt_init_keymap();
+    ps2_init();
+    ps2_install_callback(_kbd_cb);
+}
+
+fn kbd_getchar() i32 {
+    return _kbd_pop();
+}
+
+fn kbd_peek() i32 {
+    if (_kbd_head == _kbd_tail) {
+        return -1;
+    }
+    return _kbd_buf[_kbd_tail];
+}
+
+#endif

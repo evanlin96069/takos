@@ -1,0 +1,15 @@
+#if !GETC
+#define GETC
+
+#include "kbd.ika"
+
+fn getchar() i32 {
+    var c: i32 = kbd_getchar();
+    while (c == -1) {
+        asm("hlt");
+        c = kbd_getchar();
+    }
+    return c;
+}
+
+#endif
