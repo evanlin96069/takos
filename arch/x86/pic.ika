@@ -17,6 +17,10 @@ const PIC_EOI = 0x20;
 
 
 fn pic_remap(offset1: u32, offset2: u32) void {
+    // save masks
+    var a1: u8 = inb(PIC1_DATA);
+    var a2: u8 = inb(PIC2_DATA);
+
     outb(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
     outb(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
     outb(PIC1_DATA, offset1);
@@ -26,8 +30,9 @@ fn pic_remap(offset1: u32, offset2: u32) void {
     outb(PIC1_DATA, ICW4_8086);
     outb(PIC2_DATA, ICW4_8086);
 
-    outb(PIC1_DATA, 0x00);
-    outb(PIC2_DATA, 0x00);
+    // restore masks
+    outb(PIC1_DATA, a1);
+    outb(PIC2_DATA, a2);
 }
 
 fn pic_send_eoi(irq: u8) void {

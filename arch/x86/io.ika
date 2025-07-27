@@ -5,7 +5,7 @@ fn inb(port: u16) u8 {
     var result: u8; // ebp-4
     asm("movw 8(%ebp), %dx"); // port
     asm("inb %dx, %al");
-    asm("movb %al, -4(%ebp)");
+    asm("movb %al, -1(%ebp)");
     return result;
 }
 
