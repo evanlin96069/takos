@@ -4,7 +4,7 @@
 #include "idt.ika"
 #include "pic.ika"
 
-var irq_handlers: [16]fn(r: *regs_t) void;
+pub var irq_handlers: [16]fn(r: *regs_t) void;
 
 extern var irq_stub_table: [16]*void;
 
@@ -33,7 +33,7 @@ fn irq_uninstall_handler(irq: u8) void {
     irq_handlers[irq] = null;
 }
 
-fn irq_handler(r: *regs_t) void {
+pub fn irq_handler(r: *regs_t) void {
     var irq: u8 = r.int_no - 32;
     if (irq_handlers[irq] != null) {
         irq_handlers[irq](r);

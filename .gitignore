@@ -1,2 +1,10 @@
-build/
-takos.iso
+/build/
+/build-*/
+
+iso/boot/kernel.bin
+
+/takos.iso
+
+*.o
+*.elf
+*.map

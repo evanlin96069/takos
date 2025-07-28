@@ -1,0 +1,8 @@
+#if !BOOT_INFO
+#define BOOT_INFO
+
+struct BootInfo {
+	magic: u32,
+};
+
+#endif

@@ -1,47 +1,76 @@
-TARGET        := kernel.bin
-BUILD         := build
-OBJDIR        := $(BUILD)/obj
-ISO_DIR       := $(BUILD)/iso
-BOOT_DIR      := $(ISO_DIR)/boot
-GRUB_DIR      := $(BOOT_DIR)/grub
-ISO           := takos.iso
+# Configuration
+ARCH                ?= x86
+BOOTLOADER          ?= multiboot2
 
-BOOT_ASM        := boot/boot.s
-LINKER_SCRIPT   := boot/linker.ld
-GRUB_CFG        := boot/grub.cfg
+ARCH_DIR            := arch/$(ARCH)
+BOOTLOADER_DIR      := $(ARCH_DIR)/boot/$(BOOTLOADER)
+multiboot2_ENTRY    := multiboot2_main
+BOOTLOADER_ENTRY    := $($(BOOTLOADER)_ENTRY)
 
-IKA_SRC := $(shell find arch drivers kernel lib -name '*.ika')
-ASM_SRC := $(shell find arch drivers kernel lib -name '*.s' -o -name '*.S')
-ASM_OBJS := $(patsubst %,$(OBJDIR)/%.o,$(basename $(ASM_SRC)))
+BUILD               := build
+OBJ_DIR             := $(BUILD)/obj
+ISO_DIR             := $(BUILD)/iso
+BOOT_OBJ_DIR        := $(OBJ_DIR)/boot
+CONFIG_DIR          := config
+BOOT_DIR            := $(ISO_DIR)/boot
+GRUB_DIR            := $(BOOT_DIR)/grub
 
-IKAC_FLAGS  := -S -e kmain -I arch/x86 -I drivers -I lib
-LDFLAGS     := -nostdlib -z max-page-size=0x1000
+ISO                 := takos.iso
+
+GRUB_CFG            := $(CONFIG_DIR)/grub.cfg
+LINKER_SCRIPT       := $(BOOTLOADER_DIR)/linker.ld
+
+KERNEL              := $(BOOT_DIR)/kernel.bin
+KERNEL_OBJ          := $(OBJ_DIR)/kernel.o
+
+BOOT_ASM            := $(BOOTLOADER_DIR)/boot.s
+BOOT_IKA            := $(BOOTLOADER_DIR)/entry.ika
+BOOT_OBJS           := $(BOOT_OBJ_DIR)/boot.o $(BOOT_OBJ_DIR)/entry.o
+
+IKA_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.ika')
+ASM_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
+ASM_OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(basename $(ASM_SRC)))
+
+IKAC_FLAGS          := -S -I lib
+KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kernel/lib -I boot
+BOOT_INC_FLAGS      := $(IKAC_FLAGS) -e $(BOOTLOADER_ENTRY) -I boot
+LDFLAGS    		    := -nostdlib -z max-page-size=0x1000
 
 all: $(ISO)
 
-$(OBJDIR) $(BOOT_DIR) $(GRUB_DIR):
+$(OBJ_DIR) $(BOOT_OBJ_DIR) $(BOOT_DIR) $(GRUB_DIR):
 	mkdir -p $@
 
-$(OBJDIR)/kernel.s: $(IKA_SRC) | $(OBJDIR)
-	ikac $(IKAC_FLAGS) -o $@ kernel/main.ika
-
-$(OBJDIR)/kernel.o: $(OBJDIR)/kernel.s
-	clang -target i386-elf -c $< -o $@
-
-$(OBJDIR)/boot.o: $(BOOT_ASM) | $(OBJDIR)
+# Boot
+$(BOOT_OBJ_DIR)/boot.o: $(BOOT_ASM) | $(BOOT_OBJ_DIR)
 	nasm -f elf32 $< -o $@
 
-$(OBJDIR)/%.o: %.s | $(OBJDIR)
+$(BOOT_OBJ_DIR)/entry.s: $(BOOT_IKA) | $(BOOT_OBJ_DIR)
+	ikac $(BOOT_INC_FLAGS) -o $@ $(BOOT_IKA)
+
+$(BOOT_OBJ_DIR)/entry.o: $(BOOT_OBJ_DIR)/entry.s | $(BOOT_OBJ_DIR)
+	clang -target i386-elf -c $< -o $@
+
+# Kernel
+$(OBJ_DIR)/kernel.s: $(IKA_SRC) | $(OBJ_DIR)
+	ikac $(KERNEL_INC_FLAGS) -o $@ kernel/main.ika
+
+$(KERNEL_OBJ): $(OBJ_DIR)/kernel.s | $(OBJ_DIR)
+	clang -target i386-elf -c $< -o $@
+
+$(OBJ_DIR)/%.o: %.s | $(OBJ_DIR)
 	mkdir -p $(dir $@)
 	nasm -f elf32 $< -o $@
 
-$(BOOT_DIR)/$(TARGET): $(OBJDIR)/boot.o $(OBJDIR)/kernel.o $(ASM_OBJS) $(LINKER_SCRIPT) | $(BOOT_DIR)
+$(KERNEL): $(BOOT_OBJS) $(KERNEL_OBJ) $(ASM_OBJS) $(LINKER_SCRIPT) | $(BOOT_DIR)
 	ld.lld -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $^
 
-$(ISO): $(BOOT_DIR)/$(TARGET) $(GRUB_CFG)
+# ISO
+$(ISO): $(KERNEL) $(GRUB_CFG) | $(GRUB_DIR)
 	cp $(GRUB_CFG) $(GRUB_DIR)/grub.cfg
 	grub-mkrescue -o $@ $(ISO_DIR)
 
+# Helpers
 run: $(ISO)
 	qemu-system-i386 -cdrom $<
 

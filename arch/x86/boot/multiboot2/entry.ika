@@ -1,0 +1,10 @@
+#include "boot_info.ika"
+
+var boot_info: BootInfo;
+
+extern fn kmain(info: *BootInfo) void;
+
+pub fn multiboot2_main(magic: u32, mbinfo: u32) void {
+	boot_info.magic = magic;
+	kmain(&boot_info);
+}

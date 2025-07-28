@@ -69,7 +69,7 @@ fn exc_msg_init() void {
     exc_msg[31] = "Reserved";
 }
 
-fn isr_handler(r: *regs_t) void {
+pub fn isr_handler(r: *regs_t) void {
     if (r.int_no >= 32) {
         return;
     }
