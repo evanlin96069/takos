@@ -46,7 +46,7 @@ fn _vga_scroll() void {
     }
 }
 
-fn _vga_move_cursor() void {
+fn _vga_update_cursor() void {
     var temp: u16 = vga_cursor_y * VGA_W + vga_cursor_x;
     outb(CRTC_ADDR, CURSOR_HIGH);
     outb(CRTC_DATA, temp >> 8);
@@ -60,7 +60,7 @@ fn vga_clear() void {
 
     vga_cursor_x = 0;
     vga_cursor_y = 0;
-    _vga_move_cursor();
+    _vga_update_cursor();
 }
 
 fn vga_putc(c: u8) void {
@@ -87,12 +87,26 @@ fn vga_putc(c: u8) void {
     }
 
     _vga_scroll();
-    _vga_move_cursor();
+    _vga_update_cursor();
 }
 
 
 fn vga_setcolor(fg: u16, bg: u16) void {
     vga_attribute = (bg << 4) | (fg & 0x0F);
+}
+
+fn vga_move_cursor(x: u8, y: u8) void {
+    if (x > VGA_W) {
+        x = VGA_W;
+    }
+
+    if (y > VGA_H) {
+        y = VGA_H;
+    }
+
+    vga_cursor_x = x;
+    vga_cursor_y = y;
+    _vga_update_cursor();
 }
 
 fn vga_init() void {

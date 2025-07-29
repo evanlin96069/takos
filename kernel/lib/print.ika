@@ -3,6 +3,7 @@
 
 #include "console.ika"
 
+#include "string.ika"
 #include "va_arg.ika"
 #include "ctype.ika"
 
@@ -16,12 +17,10 @@ fn puts(s: []u8) i32 {
         return 0;
     }
 
-    var i: u32 = 0;
-    while (s[i] != 0) : (i += 1) {
-        putchar(s[i]);
-    }
+    var len: u32 = strlen(s);
+    console_write(s, len);
 
-    return i;
+    return len;
 }
 
 fn itoa(value: i32, str: []u8, base: i32) []u8 {

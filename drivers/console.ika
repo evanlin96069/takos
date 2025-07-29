@@ -3,21 +3,130 @@
 
 #include "vga_text.ika"
 
-var putc_fn: fn(c: u8) void;
-var clear_fn: fn() void;
+enum {
+    CSI_IDLE,
+    CSI_ESC,
+    CSI_COLLECT,
+};
+
+var _csi_state: i32 =  CSI_IDLE;
+
+const _CSI_BUF_SIZE = 16;
+var _csi_buf: [_CSI_BUF_SIZE]u8;
+var _csi_len: u32 = 0;
+
+var con_fg: u16 = VGA_COLOR_LIGHT_GREY;
+var con_bg: u16 = VGA_COLOR_BLACK;
+
+var con_color_palette: [16]u8;
+
+fn _con_init_color_pallet() void {
+    // normal
+    con_color_palette[0] = VGA_COLOR_BLACK;
+    con_color_palette[1] = VGA_COLOR_RED;
+    con_color_palette[2] = VGA_COLOR_GREEN;
+    con_color_palette[3] = VGA_COLOR_BROWN;
+    con_color_palette[4] = VGA_COLOR_BLUE;
+    con_color_palette[5] = VGA_COLOR_MAGENTA;
+    con_color_palette[6] = VGA_COLOR_CYAN;
+    con_color_palette[7] = VGA_COLOR_LIGHT_GREY;
+
+    // bright
+    con_color_palette[8] = VGA_COLOR_DARK_GREY;
+    con_color_palette[9] = VGA_COLOR_LIGHT_RED;
+    con_color_palette[10] = VGA_COLOR_LIGHT_GREEN;
+    con_color_palette[11] = VGA_COLOR_LIGHT_BROWN;
+    con_color_palette[12] = VGA_COLOR_LIGHT_BLUE;
+    con_color_palette[13] = VGA_COLOR_LIGHT_MAGENTA;
+    con_color_palette[14] = VGA_COLOR_LIGHT_CYAN;
+    con_color_palette[15] = VGA_COLOR_WHITE;
+}
+
+fn _con_apply_sgr_params() void {
+    _csi_buf[_csi_len] = 0;
+    var p: []u8 = &_csi_buf;
+
+    if (*p == 0) {
+        // reset
+        con_fg = VGA_COLOR_LIGHT_GREY;
+        con_bg = VGA_COLOR_BLACK;
+        vga_setcolor(con_fg, con_bg);
+        return;
+    }
+
+    while (*p != 0) {
+        var code: u32 = 0;
+        while (*p >= '0' && *p <= '9') {
+            code = code * 10 + (*p - '0');
+            p += 1;
+        }
+
+        if (*p == ';') {
+            p += 1;
+        }
+
+        if (code == 0) {
+            con_fg = VGA_COLOR_LIGHT_GREY;
+            con_bg = VGA_COLOR_BLACK;
+        } else if (code >= 30 && code <= 37) {
+            con_fg = con_color_palette[code - 30];
+        } else if (code >= 90 && code <= 97) {
+            con_fg = con_color_palette[code - 90 + 8];
+        } else if (code >= 40 && code <= 47) {
+            con_bg = con_color_palette[code - 40];
+        } else if (code >= 100 && code <= 107) {
+            con_bg = con_color_palette[code - 100 + 8];
+        }
+    }
+
+    vga_setcolor(con_fg, con_bg);
+}
 
 fn console_init() void {
+    _con_init_color_pallet();
     vga_init();
-    putc_fn = vga_putc;
-    clear_fn = vga_clear;
 }
 
 fn console_putc(c: u8) void {
-    putc_fn(c);
+    if (_csi_state == CSI_IDLE) {
+        if (c == 0x1B) {
+            _csi_state = CSI_ESC;
+        } else {
+            vga_putc(c);
+        }
+    } else if (_csi_state == CSI_ESC) {
+        if (c == '[') {
+            _csi_state = CSI_COLLECT;
+            _csi_len = 0;
+        } else {
+            vga_putc(0x1B);
+            vga_putc(c);
+            _csi_state = CSI_IDLE;
+        }
+    } else if (_csi_state == CSI_COLLECT) {
+        if ((c >= '0' && c <= '9') || c == ';') {
+            if (_csi_len < _CSI_BUF_SIZE - 1) {
+                _csi_buf[_csi_len] = c;
+                _csi_len += 1;
+            }
+        } else if (c == 'm') {
+            _con_apply_sgr_params();
+            _csi_state = CSI_IDLE;
+        } else {
+            _csi_state = CSI_IDLE;
+        }
+    }
+}
+
+fn console_write(buf: []u8, len: u32) void {
+    var i: u32 = 0;
+    while (i < len) : (i += 1) {
+        console_putc(buf[i]);
+    }
 }
 
 fn console_clear() void {
-    clear_fn();
+    vga_clear();
 }
 
 #endif
