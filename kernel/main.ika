@@ -27,7 +27,12 @@ pub fn kmain(info: *BootInfo) void {
     kbd_init();
     asm("sti");
 
-    "magic=0x%X\n", info.magic;
+    var i: u32 = 0;
+    while (i < info.mmap_count) : (i += 1) {
+        "mmap[%d]:\n", i;
+        "    addr: 0x%x\n", info.mmap[i].base;
+        "    length: %d\n", info.mmap[i].length;
+    }
 
     "takos is running! %s\n", "WAH!";
 
@@ -40,7 +45,7 @@ pub fn kmain(info: *BootInfo) void {
         }
     }
 
-    var i: u32 = 1;
+    i = 1;
     while (true) : (i += 1) {
         sleep(1000);
         if (i == 1) {

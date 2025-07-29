@@ -1,8 +1,17 @@
 #if !BOOT_INFO
 #define BOOT_INFO
 
+const BOOTINFO_MAX_MMAP = 32;
+
+// TODO: u64
+struct BootMMap {
+    base: u32,
+    length: u32,
+};
+
 struct BootInfo {
-	magic: u32,
+    mmap: [BOOTINFO_MAX_MMAP]BootMMap,
+    mmap_count: u32,
 };
 
 #endif

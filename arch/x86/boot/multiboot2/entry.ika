@@ -1,10 +1,47 @@
 #include "boot_info.ika"
 
+#include "multiboot2.ika"
+
 var boot_info: BootInfo;
 
 extern fn kmain(info: *BootInfo) void;
 
-pub fn multiboot2_main(magic: u32, mbinfo: u32) void {
-	boot_info.magic = magic;
+fn parse_multiboot2(mb_addr: u32, out: *BootInfo) void {
+    out.mmap_count = 0;
+
+    var tag: *multiboot_tag = as(*multiboot_tag, mb_addr + 8);
+    while (tag.type != MULTIBOOT_TAG_TYPE_END) :
+        (tag = as(*multiboot_tag, as(u32, tag) + ((tag.size + 7) & ~7))) {
+        if (tag.type == MULTIBOOT_TAG_TYPE_MMAP) {
+            var entries: []multiboot_memory_map_t = as([]multiboot_memory_map_t,
+                                                       as(u32, tag) + sizeof(multiboot_tag_mmap));
+            var i: u32 = 0;
+            var mmap_count: u32 = tag.size / sizeof(multiboot_memory_map_t);
+            while (i < mmap_count) : (i += 1) {
+                // ika can't do u64 yet...
+                if (entries[i].addr_high != 0 || entries[i].len_high != 0) {
+                    continue;
+                }
+
+                if (entries[i].type == MULTIBOOT_MEMORY_AVAILABLE &&
+                    out.mmap_count < BOOTINFO_MAX_MMAP) {
+                    out.mmap[out.mmap_count].base = entries[i].addr_low;
+                    out.mmap[out.mmap_count].length = entries[i].len_low;
+                    out.mmap_count += 1;
+                }
+            }
+        }
+    }
+}
+
+pub fn multiboot2_main(magic: u32, mb_addr: u32) void {
+    if (magic != MULTIBOOT2_BOOTLOADER_MAGIC) {
+        while (true) {
+            asm("cli");
+            asm("hlt");
+        }
+    }
+
+    parse_multiboot2(mb_addr, &boot_info);
 	kmain(&boot_info);
 }

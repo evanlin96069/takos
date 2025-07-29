@@ -1,0 +1,61 @@
+#if !MULTIBOOT2
+#define MULTIBOOT2
+
+const MULTIBOOT2_BOOTLOADER_MAGIC = 0x36D76289;
+
+enum {
+    MULTIBOOT_TAG_TYPE_END = 0,
+    MULTIBOOT_TAG_TYPE_CMDLINE = 1,
+    MULTIBOOT_TAG_TYPE_BOOT_LOADER_NAME = 2,
+    MULTIBOOT_TAG_TYPE_MODULE = 3,
+    MULTIBOOT_TAG_TYPE_BASIC_MEMINFO = 4,
+    MULTIBOOT_TAG_TYPE_BOOTDEV = 5,
+    MULTIBOOT_TAG_TYPE_MMAP = 6,
+    MULTIBOOT_TAG_TYPE_VBE = 7,
+    MULTIBOOT_TAG_TYPE_FRAMEBUFFER = 8,
+    MULTIBOOT_TAG_TYPE_ELF_SECTIONS = 9,
+    MULTIBOOT_TAG_TYPE_APM = 10,
+    MULTIBOOT_TAG_TYPE_EFI32 = 11,
+    MULTIBOOT_TAG_TYPE_EFI64 = 12,
+    MULTIBOOT_TAG_TYPE_SMBIOS = 13,
+    MULTIBOOT_TAG_TYPE_ACPI_OLD = 14,
+    MULTIBOOT_TAG_TYPE_ACPI_NEW = 15,
+    MULTIBOOT_TAG_TYPE_NETWORK = 16,
+    MULTIBOOT_TAG_TYPE_EFI_MMAP = 17,
+    MULTIBOOT_TAG_TYPE_EFI_BS = 18,
+    MULTIBOOT_TAG_TYPE_EFI32_IH = 19,
+    MULTIBOOT_TAG_TYPE_EFI64_IH = 20,
+    MULTIBOOT_TAG_TYPE_LOAD_BASE_ADDR = 21,
+};
+
+struct multiboot_tag {
+    type: u32,
+    size: u32,
+};
+
+enum {
+    MULTIBOOT_MEMORY_AVAILABLE = 1,
+    MULTIBOOT_MEMORY_RESERVED,
+    MULTIBOOT_MEMORY_ACPI_RECLAIMABLE,
+    MULTIBOOT_MEMORY_NVS,
+    MULTIBOOT_MEMORY_BADRAM,
+};
+
+struct multiboot_memory_map_t {
+    addr_low: u32,
+    addr_high: u32,
+    len_low: u32,
+    len_high: u32,
+    type: u32,
+    zero: u32,
+};
+
+struct multiboot_tag_mmap {
+    type: u32,
+    size: u32,
+    entry_size: u32,
+    entry_version: u32,
+    // entries: [0]multiboot_memory_map_t,
+};
+
+#endif
