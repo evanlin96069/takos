@@ -1,0 +1,16 @@
+#if !INTERRUPT
+#define INTERRUPT
+
+fn interrupt_enable() void {
+    asm("sti");
+}
+
+fn interrupt_disable() void {
+    asm("cli");
+}
+
+fn breakpoint() void {
+    asm("int $3");
+}
+
+#endif

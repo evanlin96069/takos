@@ -5,6 +5,7 @@
 #include "idt.ika"
 #include "isr.ika"
 #include "irq.ika"
+#include "interrupt.ika"
 
 // drivers
 #include "console.ika"
@@ -25,7 +26,8 @@ pub fn kmain(info: *BootInfo) void {
     console_init();
     timer_init(100);
     kbd_init();
-    asm("sti");
+
+    interrupt_enable();
 
     var i: u32 = 0;
     while (i < info.mmap_count) : (i += 1) {
