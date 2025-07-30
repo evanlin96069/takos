@@ -36,4 +36,46 @@ fn strlen(s: []u8) u32 {
     return i;
 }
 
+fn utoa(value: u32, str: []u8, base: i32) []u8 {
+    const digits = "0123456789abcdef";
+    if (value == 0) {
+        str[0] = '0';
+        str[1] = 0;
+        return str;
+    }
+
+    var i: u32 = 0;
+    while (value != 0) : (value /= base) {
+        var rem: u32 = value % base;
+        str[i] = digits[rem];
+        i += 1;
+    }
+
+    str[i] = 0;
+
+    // reverse string
+    var start: u32 = 0;
+    var end: u32 = i - 1;
+    while (start < end) {
+        var temp: u8 = str[start];
+        str[start] = str[end];
+        str[end] = temp;
+        end -= 1;
+        start += 1;
+    }
+    return str;
+}
+
+fn itoa(value: i32, str: []u8, base: i32) []u8 {
+    var negative: u32 = 0;
+    if (value < 0) {
+        negative = 1;
+        str[0] = '-';
+        value = -value;
+    }
+
+    utoa(value, str + negative, base);
+    return str;
+}
+
 #endif

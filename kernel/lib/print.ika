@@ -23,49 +23,6 @@ fn puts(s: []u8) i32 {
     return len;
 }
 
-fn itoa(value: i32, str: []u8, base: i32) []u8 {
-    const digits = "0123456789abcdef";
-
-    var i: u32 = 0;
-    var negative: bool = false;
-
-    if (value == 0) {
-        str[0] = '0';
-        str[1] = 0;
-        return str;
-    }
-
-    if (value < 0 && base == 10) {
-        negative = true;
-        value = -value;
-    }
-
-    while (value != 0) : (value /= base) {
-        var rem: u32 = value % base;
-        str[i] = digits[rem];
-        i += 1;
-    }
-
-    if (negative) {
-        str[i] = '-';
-        i += 1;
-    }
-
-    str[i] = 0;
-
-    // reverse string
-    var start: u32 = 0;
-    var end: u32 = i - 1;
-    while (start < end) {
-        var temp: u8 = str[start];
-        str[start] = str[end];
-        str[end] = temp;
-        end -= 1;
-        start += 1;
-    }
-    return str;
-}
-
 fn printf(fmt: []u8, ...) i32 {
     var ap: va_list;
     va_start(&ap, &fmt, sizeof([]u8));
@@ -96,6 +53,10 @@ fn printf(fmt: []u8, ...) i32 {
             var n: i32 = *as(*i32, va_arg(&ap, sizeof(i32)));
             var buf: [16]u8;
             count += puts(itoa(n, &buf, 10));
+        } else if (*fmt == 'u') {
+            var n: u32 = *as(*u32, va_arg(&ap, sizeof(u32)));
+            var buf: [16]u8;
+            count += puts(utoa(n, &buf, 10));
         } else if (*fmt == 'p' || *fmt == 'x' || *fmt == 'X') {
             if (*fmt == 'p') {
                 count += puts("0x");
@@ -103,7 +64,7 @@ fn printf(fmt: []u8, ...) i32 {
             var n: u32 = *as(*u32, va_arg(&ap, sizeof(u32)));
             var buf: [16]u8;
 
-            var s: []u8 = itoa(n, &buf, 16);
+            var s: []u8 = utoa(n, &buf, 16);
             var i: u32 = 0;
             while (s[i] != 0) : (i += 1) {
                 s[i] = toupper(s[i]);
