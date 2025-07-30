@@ -1,0 +1,118 @@
+#if !PMM
+#define PMM
+
+#include "string.ika"
+#include "u64.ika"
+
+#include "panic.ika"
+
+var _pmm_bitmap: []u8;
+var _pmm_bitmap_bytes: u32;
+var _pmm_num_pages: u32;
+var _pmm_last_index: u32 = 0;
+var _pmm_free_page_count: u32 = 0;
+
+fn _bitmap_page_index(phys_addr: u32) u32 {
+    return phys_addr >> 12;
+}
+
+fn _bitmap_test(bitmap: []u8, i: u32) bool {
+    return (bitmap[i >> 3] & (1 << (i &7))) != 0;
+}
+
+fn _bitmap_set(bitmap: []u8, i: u32) void {
+    bitmap[i >> 3] |= (1 << (i & 7));
+}
+
+fn _bitmap_clear(bitmap: []u8, i: u32) void {
+    bitmap[i >> 3] &= ~(1 << (i & 7));
+}
+
+fn pmm_init(info: *BootInfo) void {
+    var i: u32 = 0;
+    var top: u32 = 0;
+    while (i < info.mmap_count) : (i += 1) {
+        if (info.mmap[i].base.high == 0 &&
+            info.mmap[i].length.high == 0 &&
+            u64_add(info.mmap[i].base, info.mmap[i].length).high == 0) {
+            var end: u32 = info.mmap[i].base.low + info.mmap[i].length.low;
+            if (end > top) {
+                top = end;
+            }
+        }
+    }
+
+    _pmm_num_pages = _bitmap_page_index(top) + 1;
+    _pmm_bitmap_bytes = (_pmm_num_pages + 7) / 8;
+
+    if (_pmm_num_pages == 0) {
+        panic("No usable memory found for page allocator.");
+    }
+
+    _pmm_bitmap = as([]u8, info.kernel_end);
+    // align to 4 Kib
+    _pmm_bitmap = as([]u8, (as(u32, _pmm_bitmap) + 0xfff) & ~0xfff);
+    memset(_pmm_bitmap, 0xFF, _pmm_bitmap_bytes); // all used
+
+    i = 0;
+    while (i < info.mmap_count) : (i += 1) {
+        var base: u32 = info.mmap[i].base.low;
+        var len: u32 = info.mmap[i].length.low;
+        var p: u32 = base;
+        while (p < base + len) : (p += 0x1000) {
+            if (p < 0x100000) {
+                continue;
+            }
+
+            if (p >= as(u32, _pmm_bitmap) &&
+                p < as(u32, _pmm_bitmap) + _pmm_bitmap_bytes) {
+                continue;
+            }
+
+            if (p < info.kernel_end) {
+                continue;
+            }
+
+            var index: u32 = _bitmap_page_index(p);
+            _bitmap_clear(_pmm_bitmap, index);
+            _pmm_free_page_count += 1;
+        }
+    }
+}
+
+fn pmm_alloc_page() *void {
+    if (_pmm_free_page_count == 0) {
+        return null;
+    }
+
+    var scanned: u32 = 0;
+    while (scanned < _pmm_num_pages) : (scanned += 1) {
+        var index: u32 = (_pmm_last_index + scanned) % _pmm_num_pages;
+        if (!_bitmap_test(_pmm_bitmap, index)) {
+            _bitmap_set(_pmm_bitmap, index);
+            _pmm_last_index = (index + 1) % _pmm_num_pages;
+            _pmm_free_page_count -= 1;
+            return as(*void, index << 12);
+        }
+    }
+
+    return null; // unreachable
+}
+
+fn pmm_free_page(phys_addr: *void) void {
+    var p: u32 = as(u32, phys_addr);
+    var index: u32 = _bitmap_page_index(p);
+    if (_bitmap_test(_pmm_bitmap, index)) {
+        _bitmap_clear(_pmm_bitmap, index);
+        _pmm_free_page_count += 1;
+        if (index < _pmm_last_index) {
+            _pmm_last_index = index;
+        }
+    }
+}
+
+fn pmm_free_pages() u32 {
+    return _pmm_free_page_count;
+}
+
+#endif

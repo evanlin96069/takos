@@ -18,7 +18,7 @@ GRUB_DIR            := $(BOOT_DIR)/grub
 ISO                 := takos.iso
 
 GRUB_CFG            := $(CONFIG_DIR)/grub.cfg
-LINKER_SCRIPT       := $(BOOTLOADER_DIR)/linker.ld
+LINKER_SCRIPT       := $(ARCH_DIR)/boot/linker.ld
 
 KERNEL              := $(BOOT_DIR)/kernel.bin
 KERNEL_OBJ          := $(OBJ_DIR)/kernel.o
@@ -30,6 +30,8 @@ BOOT_OBJS           := $(BOOT_OBJ_DIR)/boot.o $(BOOT_OBJ_DIR)/entry.o
 IKA_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.ika')
 ASM_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
 ASM_OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(basename $(ASM_SRC)))
+
+OBJ_FILES := $(BOOT_OBJS) $(ASM_OBJS) $(KERNEL_OBJ)
 
 IKAC_FLAGS          := -S -I lib
 KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kernel/lib -I boot
@@ -62,8 +64,8 @@ $(OBJ_DIR)/%.o: %.s | $(OBJ_DIR)
 	mkdir -p $(dir $@)
 	nasm -f elf32 $< -o $@
 
-$(KERNEL): $(BOOT_OBJS) $(KERNEL_OBJ) $(ASM_OBJS) $(LINKER_SCRIPT) | $(BOOT_DIR)
-	ld.lld -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $^
+$(KERNEL): $(OBJ_FILES) $(LINKER_SCRIPT) | $(BOOT_DIR)
+	ld.lld -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $(OBJ_FILES)
 
 # ISO
 $(ISO): $(KERNEL) $(GRUB_CFG) | $(GRUB_DIR)

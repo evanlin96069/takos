@@ -6,6 +6,8 @@ var boot_info: BootInfo;
 
 extern fn kmain(info: *BootInfo) void;
 
+extern var _kernel_end: u8; // defined by linker script
+
 fn parse_multiboot2(mb_addr: u32, out: *BootInfo) void {
     out.mmap_count = 0;
 
@@ -37,6 +39,7 @@ pub fn multiboot2_main(magic: u32, mb_addr: u32) void {
         }
     }
 
+    boot_info.kernel_end = as(u32, &_kernel_end);
     parse_multiboot2(mb_addr, &boot_info);
 	kmain(&boot_info);
 }

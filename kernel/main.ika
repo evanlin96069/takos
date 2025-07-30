@@ -6,6 +6,7 @@
 #include "isr.ika"
 #include "irq.ika"
 #include "interrupt.ika"
+#include "pmm.ika"
 
 // drivers
 #include "console.ika"
@@ -42,33 +43,42 @@ pub fn color_test() void {
 }
 
 pub fn print_memory_map(info: *BootInfo) void {
+    "Kernel end: 0x%x\n", info.kernel_end;
     "Memory map:\n";
     var i: u32 = 0;
     while (i < info.mmap_count) : (i += 1) {
         if (info.mmap[i].base.high == 0 && info.mmap[i].length.high == 0) {
             "mmap[%d]:\n", i;
             "    addr: 0x%x\n", info.mmap[i].base.low;
-            "    length: %d\n", info.mmap[i].length.low;
+            "    length: %u\n", info.mmap[i].length.low;
         }
     }
 }
 
 pub fn kmain(info: *BootInfo) void {
+    // boot stage 1
     gdt_init();
     idt_init();
     isr_init();
     irq_init();
 
     console_init();
+    pmm_init(info);
+
+    // boot stage 2
     timer_init(100);
     kbd_init();
 
     interrupt_enable();
-
     "takos is running! %s\n", "WAH!";
 
     print_memory_map(info);
     color_test();
+
+    "Free pages: %d\n", pmm_free_pages();
+    var p1: []u8 = pmm_alloc_page();
+    var p2: []u8 = pmm_alloc_page();
+    "Allocated pages %p %p\n", p1, p2;
 
     "Keyboard test: ";
     while (true) {
