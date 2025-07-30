@@ -2,6 +2,7 @@
 #define ISR
 
 #include "idt.ika"
+#include "panic.ika"
 
 #include "print.ika"
 
@@ -80,11 +81,7 @@ pub fn isr_handler(r: *regs_t) void {
     }
 
     "\n*** EXCEPTION: %s ***\n", exc_msg[r.int_no];
-    "Halting...\n";
-
-    while (true) {
-        asm("hlt");
-    }
+    panic("Unhandled interrupt.");
 }
 
 #endif

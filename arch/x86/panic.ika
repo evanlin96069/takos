@@ -1,0 +1,12 @@
+#if !PANIC
+#define PANIC
+
+fn panic(msg: []u8) void {
+    "\n[\x1b[31mPANIC\x1b[0m] %s\n", msg;
+    while (true) {
+        asm("cli");
+        asm("hlt");
+    }
+}
+
+#endif
