@@ -13,4 +13,11 @@ fn breakpoint() void {
     asm("int $3");
 }
 
+fn halt() void {
+    while (true) {
+        asm("cli");
+        asm("hlt");
+    }
+}
+
 #endif

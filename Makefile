@@ -34,7 +34,7 @@ ASM_OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(basename $(ASM_SRC)))
 OBJ_FILES := $(BOOT_OBJS) $(ASM_OBJS) $(KERNEL_OBJ)
 
 IKAC_FLAGS          := -S -I lib
-KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kernel/lib -I boot
+KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kernel -I kernel/lib -I boot
 BOOT_INC_FLAGS      := $(IKAC_FLAGS) -e $(BOOTLOADER_ENTRY) -I boot
 LDFLAGS    		    := -nostdlib -z max-page-size=0x1000
 
