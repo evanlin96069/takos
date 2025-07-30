@@ -45,9 +45,11 @@ pub fn print_memory_map(info: *BootInfo) void {
     "Memory map:\n";
     var i: u32 = 0;
     while (i < info.mmap_count) : (i += 1) {
-        "mmap[%d]:\n", i;
-        "    addr: 0x%x\n", info.mmap[i].base;
-        "    length: %d\n", info.mmap[i].length;
+        if (info.mmap[i].base.high == 0 && info.mmap[i].length.high == 0) {
+            "mmap[%d]:\n", i;
+            "    addr: 0x%x\n", info.mmap[i].base.low;
+            "    length: %d\n", info.mmap[i].length.low;
+        }
     }
 }
 

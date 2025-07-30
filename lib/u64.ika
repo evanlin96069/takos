@@ -1,0 +1,98 @@
+#if !U64
+#define U64
+
+// Workaround before ika support u64
+
+struct u64 {
+    low: u32,
+    high: u32,
+};
+
+fn u64_from_u32(n: u32) u64 {
+    var r: u64;
+    r.low = n;
+    r.high = 0;
+    return r;
+}
+
+fn u64_add_u32(a: u64, b: u32) u64 {
+    var r: u64;
+    r.low  = a.low + b;
+    r.high = a.high;
+
+    if (r.low < a.low) {
+        r.high += 1;
+    }
+    return r;
+}
+
+fn u64_add(a: u64, b: u64) u64 {
+    var r: u64;
+
+    r.low  = a.low + b.low;
+    var carry: u32 = 0;
+    if (r.low < a.low) {
+        carry = 1;
+    }
+    r.high = a.high + b.high + carry;
+    return r;
+}
+
+fn u64_sub_u32(a: u64, b: u32) u64 {
+    var r: u64;
+    r.low  = a.low - b;
+
+    if (a.low < b) {
+        r.high = a.high - 1;
+    } else {
+        r.high = a.high;
+    }
+    return r;
+}
+
+fn u64_sub(a: u64, b: u64) u64 {
+    var r: u64;
+
+    var borrow: u32 = 0;
+    if (a.low < b.low) {
+        borrow = 1;
+    }
+    r.low  = a.low - b.low;
+    r.high = a.high - b.high - borrow;
+    return r;
+
+}
+
+fn u64_eq(lhs: u64, rhs: u64) bool {
+    return lhs.low == rhs.low && lhs.high == rhs.low;
+}
+
+fn u64_ne(lhs: u64, rhs: u64) bool {
+    return lhs.low != rhs.low || lhs.high != rhs.low;
+}
+
+fn u64_lt(lhs: u64, rhs: u64) bool {
+    if (lhs.high < rhs.high) return true;
+    if (lhs.high > rhs.high) return false;
+    return lhs.low < rhs.low;
+}
+
+fn u64_le(lhs: u64, rhs: u64) bool {
+    if (lhs.high < rhs.high) return true;
+    if (lhs.high > rhs.high) return false;
+    return lhs.low <= rhs.low;
+}
+
+fn u64_gt(lhs: u64, rhs: u64) bool {
+    if (lhs.high > rhs.high) return true;
+    if (lhs.high < rhs.high) return false;
+    return lhs.low > rhs.low;
+}
+
+fn u64_ge(lhs: u64, rhs: u64) bool {
+    if (lhs.high > rhs.high) return true;
+    if (lhs.high < rhs.high) return false;
+    return lhs.low >= rhs.low;
+}
+
+#endif

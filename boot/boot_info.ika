@@ -1,12 +1,13 @@
 #if !BOOT_INFO
 #define BOOT_INFO
 
+#include "u64.ika"
+
 const BOOTINFO_MAX_MMAP = 32;
 
-// TODO: u64
 struct BootMMap {
-    base: u32,
-    length: u32,
+    base: u64,
+    length: u64,
 };
 
 struct BootInfo {

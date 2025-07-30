@@ -1,22 +1,27 @@
 #if !TIMER
 #define TIMER
 
+#include "u64.ika"
+
 #include "pit.ika"
 #include "irq.ika"
 
-var _timer_ticks: u32 = 0; // ika doesn't have u64 yet...
+var _timer_ticks: u64;
 
 fn _timer_cb() void {
-    _timer_ticks += 1;
+    _timer_ticks = u64_add_u32(_timer_ticks, 1);
 }
 
 fn timer_init(hz: u32) void {
+    _timer_ticks.low = 0;
+    _timer_ticks.high = 0;
+
     pit_init(hz);
     pit_install_callback(_timer_cb);
 }
 
 fn timer_ticks() u32 {
-    return _timer_ticks;
+    return _timer_ticks.low;
 }
 
 fn timer_hz() u32 {

@@ -18,15 +18,10 @@ fn parse_multiboot2(mb_addr: u32, out: *BootInfo) void {
             var i: u32 = 0;
             var mmap_count: u32 = tag.size / sizeof(multiboot_memory_map_t);
             while (i < mmap_count) : (i += 1) {
-                // ika can't do u64 yet...
-                if (entries[i].addr_high != 0 || entries[i].len_high != 0) {
-                    continue;
-                }
-
                 if (entries[i].type == MULTIBOOT_MEMORY_AVAILABLE &&
                     out.mmap_count < BOOTINFO_MAX_MMAP) {
-                    out.mmap[out.mmap_count].base = entries[i].addr_low;
-                    out.mmap[out.mmap_count].length = entries[i].len_low;
+                    out.mmap[out.mmap_count].base = entries[i].addr;
+                    out.mmap[out.mmap_count].length = entries[i].len;
                     out.mmap_count += 1;
                 }
             }
