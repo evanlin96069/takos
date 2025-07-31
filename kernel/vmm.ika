@@ -1,0 +1,44 @@
+#if !VMM
+#define VMM
+
+#include "paging.ika"
+
+#include "boot_info.ika"
+#include "pmm.ika"
+
+fn vmm_init(info: *BootInfo) void {
+    paging_install_page_fault_handler();
+
+    paging_kernel_dir = pmm_alloc_page();
+    memset(paging_kernel_dir, 0, PAGE_SIZE);
+    paging_kernel_dir_phys = as(u32, paging_kernel_dir);
+
+    // Kerenl
+    paging_map_region(0, 0, info.kernel_end, PG_RW | PG_GLOBAL);
+
+    // PMM bitmap
+    var bitmap_size: u32 = as(u32, pmm_bitmap) + pmm_bitmap_bytes - info.kernel_end;
+    paging_map_region(info.kernel_end, info.kernel_end, bitmap_size, PG_RW | PG_GLOBAL);
+
+    // Recursive PDE
+    paging_kernel_dir[1023] = as(u32, paging_kernel_dir) | PG_PRESENT | PG_RW;
+    paging_kernel_dir = as([]u32, 0xFFFFF000);
+
+    paging_switch_directory(paging_kernel_dir_phys);
+    paging_enable();
+}
+
+fn vmm_map_page(vaddr: *void, paddr: *void, flags: u32) void {
+    paging_map(as(u32, vaddr), as(u32, paddr), flags);
+}
+
+fn vmm_alloc_and_map(vaddr: *void, flags: u32) void {
+    var paddr: *void = pmm_alloc_page();
+    paging_map(as(u32, vaddr), as(u32, paddr), flags);
+}
+
+fn vmm_unmap_page(vaddr: *void) void {
+    paging_unmap(as(u32, vaddr));
+}
+
+#endif

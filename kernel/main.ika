@@ -7,6 +7,7 @@
 #include "irq.ika"
 #include "interrupt.ika"
 #include "pmm.ika"
+#include "vmm.ika"
 
 // drivers
 #include "console.ika"
@@ -64,6 +65,7 @@ pub fn kmain(info: *BootInfo) void {
 
     console_init();
     pmm_init(info);
+    vmm_init(info);
 
     // boot stage 2
     timer_init(100);
@@ -76,9 +78,14 @@ pub fn kmain(info: *BootInfo) void {
     color_test();
 
     "Free pages: %d\n", pmm_free_pages();
-    var p1: []u8 = pmm_alloc_page();
-    var p2: []u8 = pmm_alloc_page();
-    "Allocated pages %p %p\n", p1, p2;
+
+    var p: []u32 = as([]u32, 0x40000000);
+    vmm_alloc_and_map(p, PG_RW);
+    memset(p, 0xFF, PAGE_SIZE);
+    *p = 0xDEADBEEF;
+    if (*p == 0xDEADBEEF) {
+        "Paging is working!\n";
+    }
 
     "Keyboard test: ";
     while (true) {

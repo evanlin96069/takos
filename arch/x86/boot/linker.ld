@@ -5,6 +5,7 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x00100000;
+    _kernel_start = .;
 
     .text ALIGN(0x1000) : {
         *(.text*)

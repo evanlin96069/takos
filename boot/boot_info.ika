@@ -14,6 +14,7 @@ struct BootInfo {
     mmap: [BOOTINFO_MAX_MMAP]BootMMap,
     mmap_count: u32,
 
+    kernel_start: u32,
     kernel_end: u32,
 };
 

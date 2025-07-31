@@ -6,8 +6,8 @@
 
 #include "panic.ika"
 
-var _pmm_bitmap: []u8;
-var _pmm_bitmap_bytes: u32;
+var pmm_bitmap: []u8;
+var pmm_bitmap_bytes: u32;
 var _pmm_num_pages: u32;
 var _pmm_last_index: u32 = 0;
 var _pmm_free_page_count: u32 = 0;
@@ -43,16 +43,16 @@ fn pmm_init(info: *BootInfo) void {
     }
 
     _pmm_num_pages = _bitmap_page_index(top) + 1;
-    _pmm_bitmap_bytes = (_pmm_num_pages + 7) / 8;
+    pmm_bitmap_bytes = (_pmm_num_pages + 7) / 8;
 
     if (_pmm_num_pages == 0) {
         panic("No usable memory found for page allocator.");
     }
 
-    _pmm_bitmap = as([]u8, info.kernel_end);
+    pmm_bitmap = as([]u8, info.kernel_end);
     // align to 4 Kib
-    _pmm_bitmap = as([]u8, (as(u32, _pmm_bitmap) + 0xfff) & ~0xfff);
-    memset(_pmm_bitmap, 0xFF, _pmm_bitmap_bytes); // all used
+    pmm_bitmap = as([]u8, (as(u32, pmm_bitmap) + 0xfff) & ~0xfff);
+    memset(pmm_bitmap, 0xFF, pmm_bitmap_bytes); // all used
 
     i = 0;
     while (i < info.mmap_count) : (i += 1) {
@@ -64,8 +64,8 @@ fn pmm_init(info: *BootInfo) void {
                 continue;
             }
 
-            if (p >= as(u32, _pmm_bitmap) &&
-                p < as(u32, _pmm_bitmap) + _pmm_bitmap_bytes) {
+            if (p >= as(u32, pmm_bitmap) &&
+                p < as(u32, pmm_bitmap) + pmm_bitmap_bytes) {
                 continue;
             }
 
@@ -74,7 +74,7 @@ fn pmm_init(info: *BootInfo) void {
             }
 
             var index: u32 = _bitmap_page_index(p);
-            _bitmap_clear(_pmm_bitmap, index);
+            _bitmap_clear(pmm_bitmap, index);
             _pmm_free_page_count += 1;
         }
     }
@@ -88,8 +88,8 @@ fn pmm_alloc_page() *void {
     var scanned: u32 = 0;
     while (scanned < _pmm_num_pages) : (scanned += 1) {
         var index: u32 = (_pmm_last_index + scanned) % _pmm_num_pages;
-        if (!_bitmap_test(_pmm_bitmap, index)) {
-            _bitmap_set(_pmm_bitmap, index);
+        if (!_bitmap_test(pmm_bitmap, index)) {
+            _bitmap_set(pmm_bitmap, index);
             _pmm_last_index = (index + 1) % _pmm_num_pages;
             _pmm_free_page_count -= 1;
             return as(*void, index << 12);
@@ -102,8 +102,8 @@ fn pmm_alloc_page() *void {
 fn pmm_free_page(phys_addr: *void) void {
     var p: u32 = as(u32, phys_addr);
     var index: u32 = _bitmap_page_index(p);
-    if (_bitmap_test(_pmm_bitmap, index)) {
-        _bitmap_clear(_pmm_bitmap, index);
+    if (_bitmap_test(pmm_bitmap, index)) {
+        _bitmap_clear(pmm_bitmap, index);
         _pmm_free_page_count += 1;
         if (index < _pmm_last_index) {
             _pmm_last_index = index;

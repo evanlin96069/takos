@@ -1,0 +1,147 @@
+#if !PAGING
+#define PAGING
+
+#include "idt.ika"
+#include "isr.ika"
+
+#include "pmm.ika"
+#include "panic.ika"
+
+#include "string.ika"
+
+var paging_kernel_dir: []u32;
+var paging_kernel_dir_phys: u32;
+
+const PAGE_SIZE = 4096;
+
+const PG_PRESENT = 0x001;
+const PG_RW = 0x002;
+const PG_USER = 0x004;
+const PG_PWT = 0x008;
+const PG_PCD = 0x010;
+const PG_ACCESSED = 0x020;
+const PG_DIRTY = 0x040;
+const PG_4MB = 0x080;
+const PG_GLOBAL = 0x100;
+
+fn pd_index(vaddr: u32) u32 {
+    return (vaddr >> 22) & 0x3FF;
+}
+
+fn pt_index(vaddr: u32) u32 {
+    return (vaddr >> 12) & 0x3FF;
+}
+
+fn page_align(x: u32) u32 {
+    return x & ~(PAGE_SIZE - 1);
+}
+
+fn paging_switch_directory(phys_pd: u32) void {
+    asm("movl 8(%ebp), %eax"); // phys_pd
+    asm("movl %eax, %cr3");
+}
+
+fn paging_enable() void {
+    asm("movl %cr0, %eax");
+    asm("orl $0x80000000, %eax"); // set PG bit
+    asm("movl %eax, %cr0");
+}
+
+fn invlpg(vaddr: *void) void {
+    asm("movl 8(%esp), %eax"); // vaddr
+    asm("invlpg (%eax)");
+}
+
+fn paging_enabled() bool {
+    var cr0: u32;
+    asm("movl %cr0, %eax");
+    asm("movl %eax, -4(%ebp)"); // cr0
+    return (cr0 & 0x80000000) != 0;
+}
+
+fn _paging_get_table(vaddr: u32, create: bool) []u32 {
+    var paging_set: bool = paging_enabled();
+    var pd_i: i32 = pd_index(vaddr);
+    if ((paging_kernel_dir[pd_i] & PG_PRESENT) != 0) {
+        if (paging_set) {
+            return as([]u32, 0xFFC00000 + (pd_i << 12));
+        } else {
+            return as([]u32, paging_kernel_dir[pd_i] & ~0xFFF);
+        }
+    }
+
+    if (!create) {
+        return null;
+    }
+
+    var paddr: *void = pmm_alloc_page();
+    paging_kernel_dir[pd_i] = as(u32, paddr) | PG_PRESENT | PG_RW;
+
+    if (paging_set) {
+        paging_switch_directory(paging_kernel_dir_phys);
+        var addr: []u32 = as([]u32, 0xFFC00000 + (pd_i << 12));
+        memset(addr, 0, PAGE_SIZE);
+        return addr;
+    }
+
+    memset(paddr, 0, PAGE_SIZE);
+    return paddr;
+}
+
+fn paging_map(vaddr: u32, paddr: u32, flags: u32) void {
+    var table: []u32 = _paging_get_table(vaddr, true);
+    var pt_i: u32 = pt_index(vaddr);
+    table[pt_i] = (paddr & ~0xFFF) | flags | PG_PRESENT;
+    invlpg(as(*void, vaddr));
+}
+
+fn paging_unmap(vaddr: u32) void {
+    var table: []u32 = _paging_get_table(vaddr, false);
+    if (table == null) {
+        return;
+    }
+
+    var pt_i: u32 = pt_index(vaddr);
+    table[pt_i] = 0;
+    invlpg(as(*void, vaddr));
+}
+
+fn paging_lookup_paddr(vaddr: u32) u32 {
+    var table: []u32 = _paging_get_table(vaddr, false);
+    if (table == null) {
+        return 0;
+    }
+
+    var pt_i: u32 = pt_index(vaddr);
+    var entry: u32 = table[pt_i];
+    if ((entry & PG_PRESENT) == 0) {
+        return 0;
+    }
+
+    return (entry & ~0xFFF) | (vaddr & 0xFFF);
+}
+
+fn paging_map_region(
+    vaddr: u32,
+    paddr: u32,
+    size: u32,
+    flags: u32
+) void {
+    var off: u32 = 0;
+    while (off < size) : (off += PAGE_SIZE) {
+        paging_map(vaddr + off, paddr + off, flags);
+    }
+}
+
+fn _page_fault_handler(r: *regs_t) void {
+    var cr2: u32;
+    asm("movl %cr2, %eax");
+    asm("movl %eax, -4(%ebp)");
+    panic("Segmentation fault at address %p (err=%x, eip=%x)", cr2, r.err_code, r.eip);
+}
+
+fn paging_install_page_fault_handler() void {
+    isr_install_handler(14, _page_fault_handler);
+}
+
+#endif
