@@ -2,9 +2,21 @@
 #define PANIC
 
 #include "interrupt.ika"
+#include "print.ika"
 
-fn panic(msg: []u8) void {
-    "\n[\x1b[31mPANIC\x1b[0m] %s\n", msg;
+#include "va_arg.ika"
+
+fn panic(fmt: []u8, ...) void {
+    "\n[\x1b[31mPANIC\x1b[0m] ";
+
+    var ap: va_list;
+    va_start(&ap, &fmt, sizeof([]u8));
+
+    vprintf(fmt, ap);
+    putchar('\n');
+
+    va_end(&ap);
+
     halt();
 }
 

@@ -23,12 +23,8 @@ fn puts(s: []u8) i32 {
     return len;
 }
 
-fn printf(fmt: []u8, ...) i32 {
-    var ap: va_list;
-    va_start(&ap, &fmt, sizeof([]u8));
-
+fn vprintf(fmt: []u8, ap: va_list) i32 {
     var count: i32 = 0;
-
     while (*fmt != 0) : (fmt += 1) {
         if (*fmt != '%') {
             putchar(*fmt);
@@ -77,7 +73,15 @@ fn printf(fmt: []u8, ...) i32 {
         }
     }
 
+    return count;
+}
+
+fn printf(fmt: []u8, ...) i32 {
+    var ap: va_list;
+    va_start(&ap, &fmt, sizeof([]u8));
+    var count: i32 = vprintf(fmt, ap);
     va_end(&ap);
+
     return count;
 }
 
