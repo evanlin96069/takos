@@ -38,6 +38,13 @@ KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kerne
 BOOT_INC_FLAGS      := $(IKAC_FLAGS) -e $(BOOTLOADER_ENTRY) -I boot
 LDFLAGS    		    := -nostdlib -z max-page-size=0x1000
 
+GRUB_MKRESCUE := $(shell command -v grub-mkrescue 2>/dev/null || command -v grub2-mkrescue 2>/dev/null)
+
+ifeq ($(GRUB_MKRESCUE),)
+$(error grub-mkrescue or grub2-mkrescue not found)
+endif
+
+
 all: $(ISO)
 
 $(OBJ_DIR) $(BOOT_OBJ_DIR) $(BOOT_DIR) $(GRUB_DIR):
@@ -70,7 +77,7 @@ $(KERNEL): $(OBJ_FILES) $(LINKER_SCRIPT) | $(BOOT_DIR)
 # ISO
 $(ISO): $(KERNEL) $(GRUB_CFG) | $(GRUB_DIR)
 	cp $(GRUB_CFG) $(GRUB_DIR)/grub.cfg
-	grub-mkrescue -o $@ $(ISO_DIR)
+	$(GRUB_MKRESCUE) -o $@ $(ISO_DIR)
 
 # Helpers
 run: $(ISO)
