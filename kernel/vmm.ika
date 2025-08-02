@@ -6,6 +6,12 @@
 #include "boot_info.ika"
 #include "pmm.ika"
 
+const KERNEL_HEAP_BASE = 0xD0000000;
+const KERNEL_HEAP_LIMIT = 0xE0000000;
+
+var heap_brk: u32 = KERNEL_HEAP_BASE;
+var heap_top: u32 = KERNEL_HEAP_BASE; // page-aligned
+
 fn vmm_init(info: *BootInfo) void {
     paging_install_page_fault_handler();
 
@@ -32,13 +38,62 @@ fn vmm_map_page(vaddr: *void, paddr: *void, flags: u32) void {
     paging_map(as(u32, vaddr), as(u32, paddr), flags);
 }
 
+fn vmm_unmap_page(vaddr: *void) void {
+    paging_unmap(as(u32, vaddr));
+}
+
 fn vmm_alloc_and_map(vaddr: *void, flags: u32) void {
     var paddr: *void = pmm_alloc_page();
     paging_map(as(u32, vaddr), as(u32, paddr), flags);
 }
 
-fn vmm_unmap_page(vaddr: *void) void {
-    paging_unmap(as(u32, vaddr));
+fn vmm_unmap_and_free(vaddr: *void) void {
+    var paddr: u32 = paging_lookup_paddr(as(u32, vaddr));
+    if (paddr == 0) {
+        return;
+    }
+
+    vmm_unmap_page(vaddr);
+    pmm_free_page(as(*void, paddr));
+}
+
+fn _page_align_up(x: u32) u32 {
+    return (x + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+}
+
+fn _page_align_down(x: u32) u32 {
+    return x & ~(PAGE_SIZE - 1);
+}
+
+fn sbrk(increment: i32) *void {
+    if (increment == 0) {
+        return as(*void, heap_brk);
+    }
+
+    var old_brk: u32 = heap_brk;
+    var new_brk: u32 = old_brk + increment;
+
+    if (new_brk < KERNEL_HEAP_BASE  ||
+        new_brk > KERNEL_HEAP_LIMIT) {
+        return null;
+    }
+
+    var algined_new_brk: u32 = (new_brk + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    if (increment > 0) {
+        while (heap_top < algined_new_brk) {
+            vmm_alloc_and_map(as(*void, heap_top), PG_RW | PG_GLOBAL);
+            heap_top += PAGE_SIZE;
+        }
+    } else {
+        while (heap_top - PAGE_SIZE >= algined_new_brk) {
+            heap_top -= PAGE_SIZE;
+            vmm_unmap_and_free(as(*void, heap_top));
+        }
+    }
+
+    heap_brk = new_brk;
+    return as(*void, old_brk);
 }
 
 #endif

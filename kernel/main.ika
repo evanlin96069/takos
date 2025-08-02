@@ -77,15 +77,20 @@ pub fn kmain(info: *BootInfo) void {
     print_memory_map(info);
     color_test();
 
-    "Free pages: %d\n", pmm_free_pages();
-
-    var p: []u32 = as([]u32, 0x40000000);
-    vmm_alloc_and_map(p, PG_RW);
+    "Heap test:\n";
+    "Heap top: %p\n", sbrk(0);
+    "Allocating memory...\n";
+    var p: []u32 = sbrk(PAGE_SIZE);
+    "Heap top: %p\n", sbrk(0);
+    "Writing to memory...\n";
     memset(p, 0xFF, PAGE_SIZE);
-    *p = 0xDEADBEEF;
-    if (*p == 0xDEADBEEF) {
-        "Paging is working!\n";
+    p[0] = 0xDEADBEEF;
+    if (*p != 0xDEADBEEF) {
+        panic("Write error");
     }
+    "Freeing memory...\n";
+    sbrk(-PAGE_SIZE);
+    "Heap top: %p\n", sbrk(0);
 
     "Keyboard test: ";
     while (true) {
