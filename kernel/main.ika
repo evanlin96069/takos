@@ -18,8 +18,9 @@
 #include "print.ika"
 #include "getc.ika"
 #include "time.ika"
+#include "malloc.ika"
 
-pub fn color_test() void {
+fn color_test() void {
     "Color test:\n";
     "Standard: ";
     "\x1b[97;40m   0 \x1b[0m";
@@ -43,7 +44,7 @@ pub fn color_test() void {
     "\x1b[0m\n";
 }
 
-pub fn print_memory_map(info: *BootInfo) void {
+fn print_memory_map(info: *BootInfo) void {
     "Kernel end: 0x%x\n", info.kernel_end;
     "Memory map:\n";
     var i: u32 = 0;
@@ -52,6 +53,47 @@ pub fn print_memory_map(info: *BootInfo) void {
             "mmap[%d]:\n", i;
             "    addr: 0x%x\n", info.mmap[i].base.low;
             "    length: %u\n", info.mmap[i].length.low;
+        }
+    }
+}
+
+fn heap_test() void {
+    "Heap test:\n";
+    "Allocating memory...\n";
+    var a: *void = malloc(128);
+    var b: *void = malloc(128);
+    var c: *void = malloc(128);
+    "a=%p, b=%p, c=%p\n", a, b, c;
+    debug_malloc_print_free_list();
+
+    "Freeing memory...\n";
+    free(a);
+    free(b);
+    free(c);
+    debug_malloc_print_free_list();
+}
+
+fn kbd_test() void {
+    "Keyboard test: ";
+    while (true) {
+        var c: i32 = getchar();
+        putchar(c);
+        if (c == '\n') {
+            break;
+        }
+    }
+}
+
+fn timer_test() void {
+    "Timer test:\n";
+    var i: u32 = 0;
+    while (i < 5) {
+        i += 1;
+        sleep(1000);
+        if (i == 1) {
+            "%d second has passed\n", i;
+        } else {
+            "%d seconds have passed\n", i;
         }
     }
 }
@@ -76,42 +118,9 @@ pub fn kmain(info: *BootInfo) void {
 
     print_memory_map(info);
     color_test();
-
-    "Heap test:\n";
-    "Heap top: %p\n", sbrk(0);
-    "Allocating memory...\n";
-    var p: []u32 = sbrk(PAGE_SIZE);
-    "Heap top: %p\n", sbrk(0);
-    "Writing to memory...\n";
-    memset(p, 0xFF, PAGE_SIZE);
-    p[0] = 0xDEADBEEF;
-    if (*p != 0xDEADBEEF) {
-        panic("Write error");
-    }
-    "Freeing memory...\n";
-    sbrk(-PAGE_SIZE);
-    "Heap top: %p\n", sbrk(0);
-
-    "Keyboard test: ";
-    while (true) {
-        var c: i32 = getchar();
-        putchar(c);
-        if (c == '\n') {
-            break;
-        }
-    }
-
-    "Timer test:\n";
-    var i: u32 = 0;
-    while (i < 5) {
-        i += 1;
-        sleep(1000);
-        if (i == 1) {
-            "%d second has passed\n", i;
-        } else {
-            "%d seconds have passed\n", i;
-        }
-    }
+    heap_test();
+    kbd_test();
+    timer_test();
 
     "Interrupt test:\n";
     breakpoint();

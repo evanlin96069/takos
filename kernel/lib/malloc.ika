@@ -1,0 +1,250 @@
+#if !MALLOC
+#define MALLOC
+
+#include "string.ika"
+
+#include "vmm.ika"
+
+// Simple allocator using free list
+
+struct MallocHeader {
+    magic: u32,
+    size: u32, // bit0 = busy
+    prev: *MallocHeader,
+    next: *MallocHeader,
+};
+
+const MALLOC_MAGIC = 'TAKO';
+const MALLOC_ALIGN = 8;
+const MALLOC_HSIZE = sizeof(MallocHeader); // header size
+const MALLOC_FSIZE = sizeof(u32); // footer size
+const MALLOC_MIN_SPLIT = MALLOC_ALIGN + MALLOC_HSIZE + MALLOC_FSIZE;
+
+var _malloc_free_head: *MallocHeader = null;
+
+fn _malloc_align_up(size: u32) u32 {
+    return (size + (MALLOC_ALIGN - 1)) & ~(MALLOC_ALIGN - 1);
+}
+
+fn _malloc_blk_size(h: *MallocHeader) u32 {
+    return h.size & ~as(u32, 1);
+}
+
+fn _malloc_get_header(ptr: *void) *MallocHeader {
+    return as(*MallocHeader, as([]u8, ptr) - MALLOC_HSIZE);
+}
+
+fn _malloc_get_footer(h: *MallocHeader) *u32 {
+    return as(*u32, as([]u8, h) + MALLOC_HSIZE + _malloc_blk_size(h));
+}
+
+fn _malloc_is_busy(h: *MallocHeader) bool {
+    return (h.size & 1) != 0;
+}
+
+fn _malloc_mark_busy(h: *MallocHeader) void {
+    h.size |= 1;
+}
+
+fn _malloc_mark_free(h: *MallocHeader) void {
+    h.size &= ~as(u32, 1);
+}
+
+fn _malloc_insert_free(h: *MallocHeader) void {
+    h.prev = null;
+    h.next = _malloc_free_head;
+    if (_malloc_free_head != null) {
+        _malloc_free_head.prev = h;
+    }
+    _malloc_free_head = h;
+}
+
+fn _malloc_remove_free(h: *MallocHeader) void {
+    if (h.prev != null) {
+        h.prev.next = h.next;
+    } else {
+        _malloc_free_head = h.next;
+    }
+
+    if (h.next != null) {
+        h.next.prev = h.prev;
+    }
+}
+
+fn _malloc_check_header(h: *MallocHeader) void {
+    if (h.magic != MALLOC_MAGIC || !_malloc_is_busy(h)) {
+        var ptr: *void = as([]u8, h) + MALLOC_HSIZE;
+        panic("Double free or corruption: %p", ptr);
+    }
+}
+
+fn malloc(size: u32) *void {
+    if (size == 0) {
+        return null;
+    }
+
+    size = _malloc_align_up(size);
+
+    // search free list
+    var h: *MallocHeader = _malloc_free_head;
+    while (h != null && _malloc_blk_size(h) < size) {
+        h = h.next;
+    }
+
+    if (h == null) {
+        // create new block
+        var need: u32 = MALLOC_HSIZE + size + MALLOC_FSIZE;
+        if ((need & (PAGE_SIZE - 1)) != 0) {
+            need = (need & ~(PAGE_SIZE - 1)) + PAGE_SIZE;
+        }
+
+        h = sbrk(need);
+        if (h == null) {
+            return null;
+        }
+
+        h.magic = MALLOC_MAGIC;
+        h.size = need - MALLOC_HSIZE - MALLOC_FSIZE;
+        _malloc_mark_free(h);
+        h.prev = null;
+        h.next = null;
+        *_malloc_get_footer(h) = h.size;
+        _malloc_insert_free(h);
+    }
+
+    _malloc_remove_free(h);
+
+    // split block
+    var total: u32 = _malloc_blk_size(h);
+    if (total >= size + MALLOC_MIN_SPLIT) {
+        var split: *MallocHeader = as(*MallocHeader,
+            as([]u8, h) + MALLOC_HSIZE + size + MALLOC_FSIZE);
+        split.magic = MALLOC_MAGIC;
+        split.size = total - size - MALLOC_HSIZE - MALLOC_FSIZE;
+        _malloc_mark_free(split);
+        *_malloc_get_footer(split) = split.size;
+        _malloc_insert_free(split);
+
+        h.size = size;
+        *_malloc_get_footer(h) = h.size;
+    }
+
+    _malloc_mark_busy(h);
+    *_malloc_get_footer(h) = h.size;
+    return as ([]u8, h) + MALLOC_HSIZE;
+}
+
+fn free(ptr: *void) void {
+    if (ptr == null) {
+        return;
+    }
+
+    var h: *MallocHeader = _malloc_get_header(ptr);
+    _malloc_check_header(h);
+
+    var heap_top: u32 = as(u32, sbrk(0));
+
+    // try merge next block
+    var next: *MallocHeader = as(*MallocHeader,
+        as([]u8, h) + MALLOC_HSIZE + _malloc_blk_size(h) + MALLOC_FSIZE);
+    if (as(u32, next) < heap_top && !_malloc_is_busy(next)) {
+        _malloc_remove_free(next);
+        h.size += MALLOC_FSIZE + MALLOC_HSIZE + _malloc_blk_size(next);
+    }
+
+    // try merge previous block
+    if (as(u32, h) > KERNEL_HEAP_BASE + MALLOC_HSIZE + MALLOC_FSIZE) {
+        var prev_footer: u32 = *as(*u32, as([]u8, h) - MALLOC_FSIZE);
+        var prev_blk_size: u32 = prev_footer & ~as(u32, 1);
+        var prev: *MallocHeader = as(*MallocHeader,
+            as([]u8, h) - MALLOC_FSIZE - prev_blk_size - MALLOC_HSIZE);
+        if (!_malloc_is_busy(prev)) {
+            _malloc_remove_free(prev);
+            prev.size += MALLOC_FSIZE + MALLOC_HSIZE + _malloc_blk_size(h);
+            h = prev;
+        }
+    }
+
+    _malloc_mark_free(h);
+    *_malloc_get_footer(h) = h.size;
+    _malloc_insert_free(h);
+}
+
+fn realloc(ptr: *void, size: u32) *void {
+    if (ptr == null) {
+        return malloc(size);
+    }
+
+    if (size == 0) {
+        free(ptr);
+        return null;
+    }
+
+    var h: *MallocHeader = _malloc_get_header(ptr);
+    _malloc_check_header(h);
+
+    var old_size: u32 = _malloc_blk_size(h);
+    if (size <= old_size) return ptr;
+
+    size = _malloc_align_up(size);
+
+    // try grow into next block
+    var heap_top: u32 = as(u32, sbrk(0));
+    var next: *MallocHeader = as(*MallocHeader,
+        as([]u8, h) + MALLOC_HSIZE + old_size + MALLOC_FSIZE);
+    if (as(u32, next) < heap_top && !_malloc_is_busy(next)) {
+        var combined: u32 = old_size + MALLOC_HSIZE +
+                            MALLOC_FSIZE + _malloc_blk_size(next);
+        if (combined >= size) {
+            // next block is large enough
+            _malloc_remove_free(next);
+            h.size = combined;
+            // split block
+            if (combined >= size + MALLOC_MIN_SPLIT) {
+                var split: *MallocHeader = as(*MallocHeader,
+                    as([]u8, h) + MALLOC_HSIZE + size + MALLOC_FSIZE);
+                split.magic = MALLOC_MAGIC;
+                split.size = combined - size - MALLOC_HSIZE - MALLOC_FSIZE;
+                _malloc_mark_free(split);
+                *_malloc_get_footer(split) = split.size;
+                _malloc_insert_free(split);
+
+                h.size = size;
+                *_malloc_get_footer(h) = h.size;
+
+            }
+            _malloc_mark_busy(h);
+            *_malloc_get_footer(h) = h.size;
+            return ptr;
+        }
+    }
+
+    // fall back
+    var new: *void = malloc(size);
+    if (new == null) {
+        return null;
+    }
+
+    memcpy(new, ptr, old_size);
+    free(ptr);
+    return new;
+}
+
+fn calloc(size: u32) *void {
+    var p: *void = malloc(size);
+    if (p != null) {
+        memset(p, 0, size);
+    }
+    return p;
+}
+
+fn debug_malloc_print_free_list() void {
+    "Malloc free list blocks:\n";
+    var h: *MallocHeader = _malloc_free_head;
+    while (h != null) : (h = h.next) {
+        var ptr: *void = as([]u8, h) + MALLOC_HSIZE;
+        "%p: size=%d\n", ptr, _malloc_blk_size(h);
+    }
+}
+
+#endif
