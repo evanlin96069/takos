@@ -126,11 +126,12 @@ fn _vfs_try_mount(
 ) i32 {
     var sb: *SuperBlock;
     var status: i32 = fst.mount(bd, &sb);
-    if (status == 0) {
-        *out = sb;
-        return 0;
+    if (status != 0) {
+        return status;
     }
-    return status;
+
+    *out = sb;
+    return 0;
 }
 
 fn vfs_mount(
@@ -150,20 +151,25 @@ fn vfs_mount(
         if (fst == null) {
             return -1;
         }
-        return _vfs_try_mount(fst, bd, out_sb);
-    }
 
-    // No name, try each driver
-    fst = fs_drivers;
-    while (fst != null) : (fst = fst.next) {
-        if (_vfs_try_mount(fst, bd, out_sb) == 0) {
-            break;
+        var state: u32 = _vfs_try_mount(fst, bd, out_sb);
+        if (state != 0) {
+            return state;
+        }
+    } else {
+        // No name, try each driver
+        fst = fs_drivers;
+        while (fst != null) : (fst = fst.next) {
+            if (_vfs_try_mount(fst, bd, out_sb) == 0) {
+                break;
+            }
+        }
+
+        if (fst == null) {
+            return -1;
         }
     }
 
-    if (fst == null) {
-        return -1;
-    }
 
     if (vfs_root_sb == null) {
         vfs_root_sb = *out_sb;

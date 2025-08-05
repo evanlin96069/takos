@@ -52,5 +52,11 @@ pub fn multiboot2_main(magic: u32, mb_addr: u32) void {
     boot_info.kernel_start = as(u32, &_kernel_start);
     boot_info.kernel_end = as(u32, &_kernel_end);
     parse_multiboot2(mb_addr, &boot_info);
+    // Hack
+    if (boot_info.module_count > 0 &&
+        boot_info.modules[boot_info.module_count - 1].end > boot_info.kernel_end) {
+        boot_info.kernel_end = boot_info.modules[boot_info.module_count - 1].end;
+    }
+
 	kmain(&boot_info);
 }

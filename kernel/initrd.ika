@@ -22,8 +22,8 @@ fn ramdisk_read(
     if (lba + cnt > rd.n_sectors) {
         return -1;
     }
-
     memcpy(buf, rd.data + lba * 512, cnt * 512);
+
     return 0;
 }
 
@@ -44,9 +44,7 @@ fn initdr_mount(info: *BootInfo) void {
     rd0_bd.ctx = &rd0;
     rd0_bd.sector_size = 512;
 
-    if (vfs_mount(&rd0_bd, "ext2", &root_sb) == 0) {
-        "Mounted initrd (read-only)\n";
-    } else {
+    if (vfs_mount(&rd0_bd, "ext2", &root_sb) != 0) {
         panic("Failed to mount initrd");
     }
 }

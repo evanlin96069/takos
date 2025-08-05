@@ -29,8 +29,6 @@ const EXT2_S_IROTH = 0x0004;
 const EXT2_S_IWOTH = 0x0002;
 const EXT2_S_IXOTH = 0x0001;
 
-const _EXT2_SECTOR_SIZE = 512;
-
 packed struct Ext2SuperBlock {
 	inodes_count: u32,
 	blocks_count: u32,
@@ -71,7 +69,7 @@ packed struct Ext2SuperBlock {
 	uuid: [16]u8,
 	volume_name: [16]u8,
 
-	last_mounted: [16]u8,
+	last_mounted: [64]u8,
 
 	algo_bitmap: u32,
 
@@ -155,8 +153,9 @@ var ext2_fs_type: FileSystemType;
 
 fn _ext2_read_block(sb: *SuperBlock, block: u32, buf: *void) i32 {
     var e2: *Ext2SbInfo = sb.private;
-    var lba: u32 = bd_blk_to_lba(block, e2.block_size, _EXT2_SECTOR_SIZE);
-    var sectors: u32 = e2.block_size / _EXT2_SECTOR_SIZE;
+    var sector_size: u32 = sb.bd.sector_size;
+    var lba: u32 = bd_blk_to_lba(block, e2.block_size, sector_size);
+    var sectors: u32 = e2.block_size / sector_size;
     return sb.bd.read(sb.bd.ctx, lba, sectors, buf);
 }
 
@@ -164,8 +163,8 @@ fn _ext2_load_inode_disk(sb: *SuperBlock, ino_no: u32, out: *Ext2INodeDisk) i32 
     var e2: *Ext2SbInfo = sb.private;
 
     var idx: u32 = ino_no - 1;
-    var group: u32 =idx / e2.inodes_per_group;
-    var index: u32 =idx % e2.inodes_per_group;
+    var group: u32 = idx / e2.inodes_per_group;
+    var index: u32 = idx % e2.inodes_per_group;
 
     var gd: *Ext2GroupDesc = &e2.groups[group];
 
@@ -178,6 +177,12 @@ fn _ext2_load_inode_disk(sb: *SuperBlock, ino_no: u32, out: *Ext2INodeDisk) i32 
     var blkbuf: []u8 = malloc(sizeof(u32));
     if (blkbuf == null) {
         return -1;
+    }
+
+    var status: i32 = _ext2_read_block(sb, tbl_block + block_off, blkbuf);
+    if (status != 0) {
+        free(blkbuf);
+        return status;
     }
 
     memcpy(out, blkbuf + offset, sizeof(Ext2INodeDisk));
@@ -218,6 +223,7 @@ fn _ext2_block_map(
         free(ibuf);
         return state;
     }
+
     *phys_out = ibuf[logical];
     free(ibuf);
     return 0;
@@ -398,17 +404,16 @@ fn ext2_put_super(sb: *SuperBlock) void {
 
 // mount
 
-var _disk_sb: Ext2SuperBlock; // this is too big to be on stack
-
 fn ext2_mount(
         bd: *BlockDevice,
         out_sb: **SuperBlock
 ) i32 {
-    if (bd.read(bd.ctx, 2, 2, &_disk_sb) < 0) { // sector 2 = 1024 on 512 sz
+    var disk_sb: Ext2SuperBlock;
+    if (bd.read(bd.ctx, 2, 2, &disk_sb) < 0) { // sector 2 = 1024 on 512 sz
         return -1;
     }
 
-    if (_disk_sb.magic != EXT2_SUPER_MAGIC) {
+    if (disk_sb.magic != EXT2_SUPER_MAGIC) {
         return -1;
     }
 
@@ -424,12 +429,12 @@ fn ext2_mount(
     memset(e2, 0, sizeof(Ext2SbInfo));
 
     // e2
-    e2.block_size = 1024 << _disk_sb.log_block_size;
-    e2.inode_size = _disk_sb.inode_size;
-    e2.inodes_per_group = _disk_sb.inodes_per_group;
-    e2.blocks_per_group = _disk_sb.blocks_per_group;
-    e2.first_data_block = _disk_sb.first_data_block;
-    e2.group_count = (_disk_sb.blocks_count + _disk_sb.blocks_per_group - 1) / _disk_sb.blocks_per_group;
+    e2.block_size = 1024 << disk_sb.log_block_size;
+    e2.inode_size = disk_sb.inode_size;
+    e2.inodes_per_group = disk_sb.inodes_per_group;
+    e2.blocks_per_group = disk_sb.blocks_per_group;
+    e2.first_data_block = disk_sb.first_data_block;
+    e2.group_count = (disk_sb.blocks_count + disk_sb.blocks_per_group - 1) / disk_sb.blocks_per_group;
 
     // read group-descriptor table
     var gd_bytes: u32 = e2.group_count * sizeof(Ext2GroupDesc);
@@ -449,12 +454,13 @@ fn ext2_mount(
         gdt_start_block = 1;
     }
 
+    var sector_size: u32 = bd.sector_size;
     var i: u32 = 0;
     while (i < gd_blocks) : (i += 1) {
         if (bd.read(
                 bd.ctx,
-                bd_blk_to_lba(gdt_start_block + i, e2.block_size, _EXT2_SECTOR_SIZE),
-                e2.block_size / _EXT2_SECTOR_SIZE,
+                bd_blk_to_lba(gdt_start_block + i, e2.block_size, sector_size),
+                e2.block_size / sector_size,
                 as([]u8, e2.groups) + i * e2.block_size) != 0) {
             free(e2.groups);
             free(e2);
@@ -485,6 +491,7 @@ fn ext2_mount(
     sb.root_inode = root;
 
     *out_sb = sb;
+
     return 0;
 }
 

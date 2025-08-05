@@ -49,7 +49,7 @@ fn color_test() void {
     "\x1b[0m\n";
 }
 
-fn print_memory_map(info: *BootInfo) void {
+fn dump_boot_info(info: *BootInfo) void {
     "Kernel end: 0x%x\n", info.kernel_end;
     "Memory map:\n";
     var i: u32 = 0;
@@ -60,22 +60,14 @@ fn print_memory_map(info: *BootInfo) void {
             "    length: %u\n", info.mmap[i].length.low;
         }
     }
-}
 
-fn heap_test() void {
-    "Heap test:\n";
-    "Allocating memory...\n";
-    var a: *void = malloc(128);
-    var b: *void = malloc(128);
-    var c: *void = malloc(128);
-    "a=%p, b=%p, c=%p\n", a, b, c;
-    debug_malloc_print_free_list();
-
-    "Freeing memory...\n";
-    free(a);
-    free(b);
-    free(c);
-    debug_malloc_print_free_list();
+    "Modules:\n";
+    i = 0;
+    while (i < info.module_count) : (i += 1) {
+        "module[%d]:\n", i;
+        "    start: 0x%x\n", info.modules[i].start;
+        "    end: 0x%x\n", info.modules[i].end;
+    }
 }
 
 fn kbd_test() void {
@@ -103,6 +95,29 @@ fn timer_test() void {
     }
 }
 
+pub fn cat(path: []u8) void {
+    var f: *File;
+    var state: i32 = vfs_open(path, &f);
+    if (state != 0) {
+        "cat: cannot open %s\n", path;
+        return;
+    }
+
+    var n: i32;
+    const BUF_SIZE = 256;
+    var buf: [BUF_SIZE]u8;
+    while ((n = vfs_read(f, &buf, BUF_SIZE-1)) > 0) {
+        buf[BUF_SIZE-1] = 0;
+        puts(&buf);
+    }
+
+    if (n < 0) {
+        "\ncat: read error\n";
+    }
+
+    vfs_close(f);
+}
+
 pub fn kmain(info: *BootInfo) void {
     // core modules
     gdt_init();
@@ -111,6 +126,8 @@ pub fn kmain(info: *BootInfo) void {
     irq_init();
 
     console_init();
+
+    dump_boot_info(info);
 
     // hardware drivers
     timer_init(10000);
@@ -123,14 +140,16 @@ pub fn kmain(info: *BootInfo) void {
     // file system
     vfs_init();
     ext2_init();
-    // initdr_mount(info);
+    initdr_mount(info);
 
     interrupt_enable();
+
     "takos is running! %s\n", "WAH!";
 
-    print_memory_map(info);
     color_test();
-    heap_test();
+    "File system test:\n";
+    "cat /etc/hostname\n";
+    cat("/etc/hostname");
     kbd_test();
     timer_test();
 
