@@ -58,4 +58,12 @@ struct multiboot_tag_mmap {
     // entries: [0]multiboot_memory_map_t,
 };
 
+struct multiboot_tag_module {
+    type: u32,
+    size: u32,
+    mod_start: u32,
+    mod_end: u32,
+    // cmdline: [0]u8,
+};
+
 #endif

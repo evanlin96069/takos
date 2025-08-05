@@ -36,6 +36,32 @@ fn strlen(s: []u8) u32 {
     return i;
 }
 
+fn strcmp(s1: []u8, s2: []u8) i32 {
+    while ((*s1 != 0) && (*s1 == *s2)) {
+        s1 += 1;
+        s2 += 1;
+    }
+    return *s1 - *s2;
+}
+
+fn strncmp(s1: []u8, s2: []u8, n: u32) i32 {
+    while (n > 0) {
+        if (*s1 != *s2) {
+            return *s1 - *s2;
+        }
+
+        if (*s1 == 0) {
+            return 0;
+        }
+
+        s1 += 1;
+        s2 += 1;
+        n -= 1;
+    }
+
+    return 0;
+}
+
 fn utoa(value: u32, str: []u8, base: i32) []u8 {
     const digits = "0123456789abcdef";
     if (value == 0) {

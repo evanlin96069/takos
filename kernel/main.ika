@@ -20,6 +20,11 @@
 #include "time.ika"
 #include "malloc.ika"
 
+// fs
+#include "vfs.ika"
+#include "ext2.ika"
+#include "initrd.ika"
+
 fn color_test() void {
     "Color test:\n";
     "Standard: ";
@@ -99,19 +104,26 @@ fn timer_test() void {
 }
 
 pub fn kmain(info: *BootInfo) void {
-    // boot stage 1
+    // core modules
     gdt_init();
     idt_init();
     isr_init();
     irq_init();
 
     console_init();
+
+    // hardware drivers
+    timer_init(10000);
+    kbd_init();
+
+    // memory management
     pmm_init(info);
     vmm_init(info);
 
-    // boot stage 2
-    timer_init(100);
-    kbd_init();
+    // file system
+    vfs_init();
+    ext2_init();
+    // initdr_mount(info);
 
     interrupt_enable();
     "takos is running! %s\n", "WAH!";

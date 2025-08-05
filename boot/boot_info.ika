@@ -4,15 +4,24 @@
 #include "u64.ika"
 
 const BOOTINFO_MAX_MMAP = 32;
+const BOOTINFO_MAX_MODULE = 32;
 
 struct BootMMap {
     base: u64,
     length: u64,
 };
 
+struct BootModule {
+    start: u32,
+    end: u32,
+};
+
 struct BootInfo {
     mmap: [BOOTINFO_MAX_MMAP]BootMMap,
     mmap_count: u32,
+
+    modules: [BOOTINFO_MAX_MODULE]BootModule,
+    module_count: u32,
 
     kernel_start: u32,
     kernel_end: u32,

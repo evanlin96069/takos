@@ -19,16 +19,29 @@ fn vmm_init(info: *BootInfo) void {
     memset(paging_kernel_dir, 0, PAGE_SIZE);
     paging_kernel_dir_phys = as(u32, paging_kernel_dir);
 
-    // Kerenl
+    // kerenl
     paging_map_region(0, 0, info.kernel_end, PG_RW | PG_GLOBAL);
+
+    // modules
+    var i: u32 = 0;
+    while (i < info.module_count) : (i += 1) {
+        paging_map_region(
+            info.modules[i].start,
+            info.modules[i].start,
+            info.modules[i].end - info.modules[i].start,
+            PG_RW | PG_GLOBAL
+        );
+    }
 
     // PMM bitmap
     var bitmap_size: u32 = as(u32, pmm_bitmap) + pmm_bitmap_bytes - info.kernel_end;
     paging_map_region(info.kernel_end, info.kernel_end, bitmap_size, PG_RW | PG_GLOBAL);
 
-    // Recursive PDE
+
+    // recursive PDE
     paging_kernel_dir[1023] = as(u32, paging_kernel_dir) | PG_PRESENT | PG_RW;
     paging_kernel_dir = as([]u32, 0xFFFFF000);
+
 
     paging_switch_directory(paging_kernel_dir_phys);
     paging_enable();

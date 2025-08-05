@@ -27,18 +27,23 @@ BOOT_ASM            := $(BOOTLOADER_DIR)/boot.s
 BOOT_IKA            := $(BOOTLOADER_DIR)/entry.ika
 BOOT_OBJS           := $(BOOT_OBJ_DIR)/boot.o $(BOOT_OBJ_DIR)/entry.o
 
-IKA_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.ika')
-ASM_SRC := $(shell find arch drivers kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
+INITRD_DIR			:= initrd
+INITRD_IMG			:= $(BOOT_DIR)/initrd.ext2
+
+IKA_SRC := $(shell find arch drivers fs kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.ika')
+ASM_SRC := $(shell find arch drivers fs kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
 ASM_OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(basename $(ASM_SRC)))
 
 OBJ_FILES := $(BOOT_OBJS) $(ASM_OBJS) $(KERNEL_OBJ)
 
 IKAC_FLAGS          := -S -I lib
-KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I kernel -I kernel/lib -I boot
+KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I fs -I kernel -I kernel/lib -I boot
 BOOT_INC_FLAGS      := $(IKAC_FLAGS) -e $(BOOTLOADER_ENTRY) -I boot
 LDFLAGS    		    := -nostdlib -z max-page-size=0x1000
 
+LD := ld.lld
 GRUB_MKRESCUE := $(shell command -v grub-mkrescue 2>/dev/null || command -v grub2-mkrescue 2>/dev/null)
+GENEXT := genext2fs
 
 ifeq ($(GRUB_MKRESCUE),)
 $(error grub-mkrescue or grub2-mkrescue not found)
@@ -46,6 +51,7 @@ endif
 
 
 all: $(ISO)
+initrd: $(INITRD_IMG)
 
 $(OBJ_DIR) $(BOOT_OBJ_DIR) $(BOOT_DIR) $(GRUB_DIR):
 	mkdir -p $@
@@ -60,6 +66,11 @@ $(BOOT_OBJ_DIR)/entry.s: $(BOOT_IKA) | $(BOOT_OBJ_DIR)
 $(BOOT_OBJ_DIR)/entry.o: $(BOOT_OBJ_DIR)/entry.s | $(BOOT_OBJ_DIR)
 	clang -target i386-elf -c $< -o $@
 
+# initrd
+$(INITRD_IMG): $(shell find $(INITRD_DIR) -type f) | $(BOOT_DIR)
+	rm -f $@
+	$(GENEXT) -b 8192 -B 1024 -U -d $(INITRD_DIR) $@
+
 # Kernel
 $(OBJ_DIR)/kernel.s: $(IKA_SRC) | $(OBJ_DIR)
 	ikac $(KERNEL_INC_FLAGS) -o $@ kernel/main.ika
@@ -72,16 +83,16 @@ $(OBJ_DIR)/%.o: %.s | $(OBJ_DIR)
 	nasm -f elf32 $< -o $@
 
 $(KERNEL): $(OBJ_FILES) $(LINKER_SCRIPT) | $(BOOT_DIR)
-	ld.lld -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $(OBJ_FILES)
+	$(LD) -T $(LINKER_SCRIPT) $(LDFLAGS) -o $@ $(OBJ_FILES)
 
 # ISO
-$(ISO): $(KERNEL) $(GRUB_CFG) | $(GRUB_DIR)
+$(ISO): $(KERNEL) $(GRUB_CFG) $(INITRD_IMG) | $(GRUB_DIR)
 	cp $(GRUB_CFG) $(GRUB_DIR)/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ $(ISO_DIR)
 
 # Helpers
 run: $(ISO)
-	qemu-system-i386 -cdrom $<
+	qemu-system-i386 -m 2G -cdrom $<
 
 clean:
 	rm -rf $(BUILD) $(ISO)

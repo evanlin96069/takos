@@ -12,6 +12,7 @@ extern var _kernel_end: u8;
 
 fn parse_multiboot2(mb_addr: u32, out: *BootInfo) void {
     out.mmap_count = 0;
+    out.module_count = 0;
 
     var tag: *multiboot_tag = as(*multiboot_tag, mb_addr + 8);
     while (tag.type != MULTIBOOT_TAG_TYPE_END) :
@@ -28,6 +29,13 @@ fn parse_multiboot2(mb_addr: u32, out: *BootInfo) void {
                     out.mmap[out.mmap_count].length = entries[i].len;
                     out.mmap_count += 1;
                 }
+            }
+        } else if (tag.type == MULTIBOOT_TAG_TYPE_MODULE) {
+            var module: *multiboot_tag_module = as(*multiboot_tag_module, tag);
+            if (out.module_count < BOOTINFO_MAX_MODULE) {
+                out.modules[out.module_count].start = module.mod_start;
+                out.modules[out.module_count].end = module.mod_end;
+                out.module_count += 1;
             }
         }
     }

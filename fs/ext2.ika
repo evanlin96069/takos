@@ -1,0 +1,504 @@
+#if !EXT2
+#define EXT2
+
+#include "string.ika"
+#include "malloc.ika"
+#include "vfs.ika"
+
+const EXT2_SUPER_MAGIC = 0xEF53;
+
+const EXT2_S_IFSOCK = 0xC000;
+const EXT2_S_IFLNK = 0xA000;
+const EXT2_S_IFREG = 0x8000;
+const EXT2_S_IFBLK = 0x6000;
+const EXT2_S_IFDIR = 0x4000;
+const EXT2_S_IFCHR = 0x2000;
+const EXT2_S_IFIFO = 0x1000;
+
+const EXT2_S_ISUID = 0x0800;
+const EXT2_S_ISGID = 0x0400;
+const EXT2_S_ISVTX = 0x0200;
+
+const EXT2_S_IRUSR = 0x0100;
+const EXT2_S_IWUSR = 0x0080;
+const EXT2_S_IXUSR = 0x0040;
+const EXT2_S_IRGRP = 0x0020;
+const EXT2_S_IWGRP = 0x0010;
+const EXT2_S_IXGRP = 0x0008;
+const EXT2_S_IROTH = 0x0004;
+const EXT2_S_IWOTH = 0x0002;
+const EXT2_S_IXOTH = 0x0001;
+
+const _EXT2_SECTOR_SIZE = 512;
+
+packed struct Ext2SuperBlock {
+	inodes_count: u32,
+	blocks_count: u32,
+	r_blocks_count: u32,
+	free_blocks_count: u32,
+	free_inodes_count: u32,
+	first_data_block: u32,
+	log_block_size: u32,
+	log_frag_size: u32,
+	blocks_per_group: u32,
+	frags_per_group: u32,
+	inodes_per_group: u32,
+	mtime: u32,
+	wtime: u32,
+
+	mnt_count: u16,
+	max_mnt_count: u16,
+	magic: u16,
+	state: u16,
+	errors: u16,
+	minor_rev_level: u16,
+
+	lastcheck: u32,
+	checkinterval: u32,
+	creator_os: u32,
+	rev_level: u32,
+
+	def_resuid: u16,
+	def_resgid: u16,
+
+	first_ino: u32,
+	inode_size: u16,
+	block_group_nr: u16,
+	feature_compat: u32,
+	feature_incompat: u32,
+	feature_ro_compat: u32,
+
+	uuid: [16]u8,
+	volume_name: [16]u8,
+
+	last_mounted: [16]u8,
+
+	algo_bitmap: u32,
+
+	prealloc_blocks: u8,
+	prealloc_dir_blocks: u8,
+	_padding: u16,
+
+	journal_uuid: [16]u8,
+	journal_inum: u32,
+	jounral_dev: u32,
+	last_orphan: u32,
+
+	hash_seed: [4]u32,
+	def_hash_version: u8,
+	_padding_a: u16,
+	_padding_b: u8,
+
+	default_mount_options: u32,
+	first_meta_bg: u32,
+	_unused: [760]u8,
+};
+
+packed struct Ext2GroupDesc {
+	block_bitmap: u32,
+	inode_bitmap: u32,
+	inode_table: u32,
+	free_blocks_count: u16,
+	free_inodes_count: u16,
+	used_dirs_count: u16,
+	pad: u16,
+	reserved: [12]u8,
+};
+
+packed struct Ext2INodeDisk {
+	mode: u16,
+	uid: u16,
+	size: u32,
+	atime: u32,
+	ctime: u32,
+	mtime: u32,
+	dtime: u32,
+	gid: u16,
+	links_count: u16,
+	blocks: u32,
+	flags: u32,
+	osd1: u32,
+	block: [15]u32,
+	generation: u32,
+	file_acl: u32,
+	dir_acl: u32,
+	faddr: u32,
+	osd2: [12]u8,
+};
+
+packed struct Ext2DirEntry {
+    inode: u32,
+	rec_len: u16,
+	name_len: u8,
+	file_type: u8,
+	name: u8, // u8 array, at most 255 bytes
+};
+
+struct Ext2SbInfo {
+    block_size: u32,
+    inode_size: u32,
+    inodes_per_group: u32,
+    blocks_per_group: u32,
+    first_data_block: u32,
+    group_count: u32,
+    groups: []Ext2GroupDesc,
+    root_inode: INode, // cached root node
+};
+
+var ext2_sb_ops: SuperOps;
+var ext2_dir_iops: INodeOps;
+var ext2_file_iops: INodeOps;
+
+var ext2_fs_type: FileSystemType;
+
+// Helper
+
+fn _ext2_read_block(sb: *SuperBlock, block: u32, buf: *void) i32 {
+    var e2: *Ext2SbInfo = sb.private;
+    var lba: u32 = bd_blk_to_lba(block, e2.block_size, _EXT2_SECTOR_SIZE);
+    var sectors: u32 = e2.block_size / _EXT2_SECTOR_SIZE;
+    return sb.bd.read(sb.bd.ctx, lba, sectors, buf);
+}
+
+fn _ext2_load_inode_disk(sb: *SuperBlock, ino_no: u32, out: *Ext2INodeDisk) i32 {
+    var e2: *Ext2SbInfo = sb.private;
+
+    var idx: u32 = ino_no - 1;
+    var group: u32 =idx / e2.inodes_per_group;
+    var index: u32 =idx % e2.inodes_per_group;
+
+    var gd: *Ext2GroupDesc = &e2.groups[group];
+
+    var tbl_block: u32 = gd.inode_table;
+    var inodes_per_block: u32 = e2.block_size / e2.inode_size;
+
+    var block_off: u32 = index / inodes_per_block;
+    var offset: u32 = (index % inodes_per_block) * e2.inode_size;
+
+    var blkbuf: []u8 = malloc(sizeof(u32));
+    if (blkbuf == null) {
+        return -1;
+    }
+
+    memcpy(out, blkbuf + offset, sizeof(Ext2INodeDisk));
+    free(blkbuf);
+    return 0;
+}
+
+fn _ext2_block_map(
+    sb: *SuperBlock,
+    disk: *Ext2INodeDisk,
+    logical: u32,
+    phys_out: *u32
+) i32 {
+    var e2: *Ext2SbInfo = sb.private;
+    if (logical < 12) {
+        *phys_out = disk.block[logical];
+        return 0;
+    }
+
+    logical -= 12;
+    var indir_block: u32 = disk.block[12];
+    if (indir_block == 0) {
+        return -1;
+    }
+
+    var per_block: u32 = e2.block_size / 4;
+    if (logical >= per_block) {
+        return -1;
+    }
+
+    var ibuf: []u32 = malloc(e2.block_size);
+    if (ibuf == null) {
+        return -1;
+    }
+
+    var state: i32 = _ext2_read_block(sb, indir_block, ibuf);
+    if (state != 0) {
+        free(ibuf);
+        return state;
+    }
+    *phys_out = ibuf[logical];
+    free(ibuf);
+    return 0;
+}
+
+// INodeOps
+
+fn ext2_inode_read(
+    ino: *INode,
+    off: u32,
+    buf: *void,
+    len: u32
+) i32 {
+    var sb: *SuperBlock = ino.sb;
+    var e2: *Ext2SbInfo = sb.private;
+
+    if (off >= ino.size) {
+        // EOF
+        return 0;
+    }
+
+    if (off + len > ino.size) {
+        len = ino.size - off;
+    }
+
+    var disk: *Ext2INodeDisk = ino.private;
+    var dst: []u8 = buf;
+    var left: u32 = len;
+    while (left != 0) {
+        var block_size: u32 = e2.block_size;
+        var lblk: u32 = off / block_size;
+        var in_block_off: u32 = off % block_size;
+        var copy_now: u32 = block_size - in_block_off;
+        if (copy_now > left) {
+            copy_now = left;
+        }
+
+        var pblk: u32;
+        if (_ext2_block_map(sb, disk, lblk, &pblk) != 0 || pblk == 0) {
+            return -1;
+        }
+
+        var blkbuf: []u8 = malloc(block_size);
+        if (blkbuf == null) {
+            return -1;
+        }
+        if (_ext2_read_block(sb, pblk, blkbuf) != 0) {
+            free(blkbuf);
+            return -1;
+        }
+
+        memcpy(dst, blkbuf + in_block_off, copy_now);
+        free(blkbuf);
+
+        dst += copy_now;
+        left -= copy_now;
+        off += copy_now;
+    }
+    return len;
+}
+
+fn ext2_inode_lookup(
+    dir: *INode,
+    name: []u8,
+    out: **INode
+) i32 {
+    if ((dir.mode & S_IFDIR) == 0) {
+        return -1;
+    }
+
+    var sb: *SuperBlock = dir.sb;
+    var e2: *Ext2SbInfo = sb.private;
+
+    var disk: *Ext2INodeDisk = dir.private;
+    var block_size: u32 = e2.block_size;
+
+    var blkbuf: []u8 = malloc(block_size);
+    if (blkbuf == null) {
+        return -1;
+    }
+
+    var name_len: u32 = strlen(name);
+
+    var lblk: u32 = 0;
+    while (true) : (lblk += 1) {
+        var pblk: u32;
+        if (_ext2_block_map(sb, disk, lblk, &pblk) != 0 || pblk == 0) {
+            break;
+        }
+
+        if (_ext2_read_block(sb, pblk, blkbuf) != 0) {
+            free(blkbuf);
+            return -1;
+        }
+
+        var pos: u32 = 0;
+        while (pos < block_size) {
+            var ent: *Ext2DirEntry = as(*Ext2DirEntry, blkbuf + pos);
+            if (ent.inode == 0) {
+                // unused
+                break;
+            }
+
+            if (ent.name_len == name_len &&
+                strncmp(as([]u8, &ent.name), name, name_len) == 0) {
+                // found
+                var child: *INode = malloc(sizeof(INode));
+                if (child == null) {
+                    free(blkbuf);
+                    return -1;
+                }
+                memset(child, 0, sizeof(INode));
+
+                child.ino_no = ent.inode;
+                child.sb = sb;
+                if (sb.ops.read_inode(child) != 0) {
+                    free(child);
+                    free(blkbuf);
+                    return -1;
+                }
+                *out = child;
+                free(blkbuf);
+                return 0;
+            }
+            pos += ent.rec_len;
+        }
+    }
+    free(blkbuf);
+    return -1;
+}
+
+// SuperOps
+
+fn ext2_read_inode(ino: *INode) i32 {
+    var sb: *SuperBlock = ino.sb;
+    var disk: Ext2INodeDisk;
+    var state: i32 = _ext2_load_inode_disk(sb, ino.ino_no, &disk);
+    if (state != 0) {
+        return state;
+    }
+
+    ino.mode = disk.mode;
+    ino.size = disk.size;
+    ino.blocks = disk.blocks;
+
+    if ((disk.mode & 0xF000) == EXT2_S_IFDIR) {
+        ino.ops = &ext2_dir_iops;
+    } else {
+        ino.ops = &ext2_file_iops;
+    }
+
+    var cache: *Ext2INodeDisk = malloc(sizeof(Ext2INodeDisk));
+    if (cache == null) {
+        return -1;
+    }
+    *cache = disk;
+    ino.private = cache;
+    return 0;
+}
+
+fn ext2_put_inode(ino: *INode) void {
+    if (ino.private != null) {
+        free(ino.private);
+    }
+    free(ino);
+}
+
+fn ext2_put_super(sb: *SuperBlock) void {
+    var e2: *Ext2SbInfo = sb.private;
+    if (e2 != null) {
+        if (e2.groups != null) {
+            free(e2.groups);
+        }
+        free(e2);
+    }
+    free(sb);
+}
+
+// mount
+
+var _disk_sb: Ext2SuperBlock; // this is too big to be on stack
+
+fn ext2_mount(
+        bd: *BlockDevice,
+        out_sb: **SuperBlock
+) i32 {
+    if (bd.read(bd.ctx, 2, 2, &_disk_sb) < 0) { // sector 2 = 1024 on 512 sz
+        return -1;
+    }
+
+    if (_disk_sb.magic != EXT2_SUPER_MAGIC) {
+        return -1;
+    }
+
+    var sb: *SuperBlock = malloc(sizeof(SuperBlock));
+    if (sb == null) {
+        return -1;
+    }
+    memset(sb, 0, sizeof(SuperBlock));
+    var e2: *Ext2SbInfo = malloc(sizeof(Ext2SbInfo));
+    if (e2 == null) {
+        return -1;
+    }
+    memset(e2, 0, sizeof(Ext2SbInfo));
+
+    // e2
+    e2.block_size = 1024 << _disk_sb.log_block_size;
+    e2.inode_size = _disk_sb.inode_size;
+    e2.inodes_per_group = _disk_sb.inodes_per_group;
+    e2.blocks_per_group = _disk_sb.blocks_per_group;
+    e2.first_data_block = _disk_sb.first_data_block;
+    e2.group_count = (_disk_sb.blocks_count + _disk_sb.blocks_per_group - 1) / _disk_sb.blocks_per_group;
+
+    // read group-descriptor table
+    var gd_bytes: u32 = e2.group_count * sizeof(Ext2GroupDesc);
+    var gd_blocks: u32 = (gd_bytes + e2.block_size - 1) / e2.block_size;
+
+    e2.groups = malloc(gd_blocks * e2.block_size);
+    if (e2.groups == null) {
+        free(e2);
+        free(sb);
+        return -1;
+    }
+
+    var gdt_start_block: u32;
+    if (e2.block_size == 1024) {
+        gdt_start_block = 2;
+    } else {
+        gdt_start_block = 1;
+    }
+
+    var i: u32 = 0;
+    while (i < gd_blocks) : (i += 1) {
+        if (bd.read(
+                bd.ctx,
+                bd_blk_to_lba(gdt_start_block + i, e2.block_size, _EXT2_SECTOR_SIZE),
+                e2.block_size / _EXT2_SECTOR_SIZE,
+                as([]u8, e2.groups) + i * e2.block_size) != 0) {
+            free(e2.groups);
+            free(e2);
+            free(sb);
+            return -1;
+        }
+    }
+
+    // sb
+    sb.magic = EXT2_SUPER_MAGIC ;
+    sb.block_size = e2.block_size;
+    sb.flags = SB_RDONLY;
+    sb.ops = &ext2_sb_ops;
+    sb.bd = bd;
+    sb.private = e2;
+
+    // cache root inode
+    var root: *INode = &e2.root_inode;
+    memset(root, 0, sizeof(INode));
+    root.ino_no = 2; // root inode number
+    root.sb = sb;
+    if (ext2_read_inode(root) != 0) {
+        free(e2.groups);
+        free(e2);
+        free(sb);
+        return -1;
+    }
+    sb.root_inode = root;
+
+    *out_sb = sb;
+    return 0;
+}
+
+fn ext2_init() void {
+    ext2_fs_type.name = "ext2";
+    ext2_fs_type.mount = ext2_mount;
+
+    ext2_sb_ops.read_inode = ext2_read_inode;
+    ext2_sb_ops.put_inode = ext2_put_inode;
+    ext2_sb_ops.put_super = ext2_put_super;
+    ext2_dir_iops.lookup = ext2_inode_lookup;
+    ext2_file_iops.read = ext2_inode_read;
+
+    vfs_register(&ext2_fs_type);
+}
+
+#endif
