@@ -95,7 +95,7 @@ fn timer_test() void {
     }
 }
 
-pub fn cat(path: []u8) void {
+fn builtin_cat(path: []u8) void {
     var f: *File;
     var state: i32 = vfs_open(path, &f);
     if (state != 0) {
@@ -107,7 +107,7 @@ pub fn cat(path: []u8) void {
     const BUF_SIZE = 256;
     var buf: [BUF_SIZE]u8;
     while ((n = vfs_read(f, &buf, BUF_SIZE-1)) > 0) {
-        buf[BUF_SIZE-1] = 0;
+        buf[n] = 0;
         puts(&buf);
     }
 
@@ -116,6 +116,33 @@ pub fn cat(path: []u8) void {
     }
 
     vfs_close(f);
+}
+
+fn builtin_ls(path: []u8) void {
+    var dir: *File;
+    if (vfs_opendir(path, &dir) != 0) {
+        "ls: cannot open %s\n", path;
+        return;
+    }
+
+    var ent: Dirent;
+    while (vfs_readdir(dir, &ent) > 0) {
+        var end: []u8 = "";
+        if (ent.type == DT_DIR) {
+            end = "/";
+        }
+        "%s%s ", &ent.name, end;
+    }
+    "\n";
+    vfs_close(dir);
+}
+
+fn fs_test() void {
+    "File system test:\n";
+    "$ ls /\n";
+    builtin_ls("/");
+    "$ cat /etc/hostname\n";
+    builtin_cat("/etc/hostname");
 }
 
 pub fn kmain(info: *BootInfo) void {
@@ -147,9 +174,7 @@ pub fn kmain(info: *BootInfo) void {
     "takos is running! %s\n", "WAH!";
 
     color_test();
-    "File system test:\n";
-    "cat /etc/hostname\n";
-    cat("/etc/hostname");
+    fs_test();
     kbd_test();
     timer_test();
 

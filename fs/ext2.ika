@@ -110,6 +110,18 @@ packed struct Ext2DirEntry {
 	name: u8, // u8 array, at most 255 bytes
 };
 
+enum {
+    EXT2_FT_UNKNOWN,
+    EXT2_FT_REG_FILE,
+    EXT2_FT_DIR,
+    EXT2_FT_CHRDEV,
+    EXT2_FT_BLKDEV,
+    EXT2_FT_FIFO,
+    EXT2_FT_SOCK,
+    EXT2_FT_SYMLINK,
+};
+
+
 struct Ext2SbInfo {
     block_size: u32,
     inode_size: u32,
@@ -124,7 +136,8 @@ struct Ext2SbInfo {
 var ext2_sb_ops: SuperOps;
 var ext2_dir_iops: INodeOps;
 var ext2_file_iops: INodeOps;
-var ext2_file_ops: FileOps;
+var ext2_dir_fops: FileOps;
+var ext2_file_fops: FileOps;
 
 var ext2_fs_type: FileSystemType;
 
@@ -350,11 +363,12 @@ fn ext2_read_inode(ino: *INode) i32 {
     ino.size = disk.size;
     ino.blocks = disk.blocks;
 
-    ino.f_ops = &ext2_file_ops;
 
     if ((disk.mode & S_IFMT) == S_IFDIR) {
+        ino.f_ops = &ext2_dir_fops;
         ino.ops = &ext2_dir_iops;
     } else {
+        ino.f_ops = &ext2_file_fops;
         ino.ops = &ext2_file_iops;
     }
 
@@ -383,6 +397,96 @@ fn ext2_put_super(sb: *SuperBlock) void {
         free(e2);
     }
     free(sb);
+}
+
+// FileOps
+fn ext2_readdir(f: *File, ctx: *void) i32 {
+    var out: *Dirent = ctx;
+    var dir_ino: *INode = f.inode;
+    var disk: *Ext2INodeDisk = dir_ino.private;
+    var sb: *SuperBlock = dir_ino.sb;
+    var e2: *Ext2SbInfo = sb.private;
+    var block_size: u32 = e2.block_size;
+
+    var blkbuf: []u8 = malloc(block_size);
+    if (blkbuf == null) {
+        return -1;
+    }
+
+    while (f.pos < dir_ino.size) {
+        var lblk: u32 = f.pos / block_size;
+        var in_block_off: u32 = f.pos % block_size;
+
+        var pblk: u32;
+        if (_ext2_block_map(dir_ino.sb, disk, lblk, &pblk) != 0 || pblk == 0) {
+            free(blkbuf);
+            return -1;
+        }
+        if (_ext2_read_block(dir_ino.sb, pblk, blkbuf) != 0) {
+            free(blkbuf);
+            return -1;
+        }
+
+        var ent: *Ext2DirEntry = as(*Ext2DirEntry, blkbuf + in_block_off);
+        f.pos += ent.rec_len;
+
+        if (ent.inode == 0) {
+            continue;
+        }
+
+        out.ino = ent.inode;
+
+        out.type = DT_UNKNOWN;
+        if (ent.file_type == EXT2_FT_UNKNOWN) {
+            // fallback to reading inode
+            var child: INode;
+            memset(&child, 0, sizeof(INode));
+
+            child.ino_no = ent.inode;
+            child.sb = sb;
+            if (sb.ops.read_inode(&child) == 0) {
+                var mode: u32 = child.mode & S_IFMT;
+                if (mode == S_IFSOCK) {
+                    out.type = DT_SOCK;
+                } else if (mode == S_IFLNK) {
+                    out.type = DT_LNK;
+                } else if (mode == S_IFREG) {
+                    out.type = DT_REG;
+                } else if (mode == S_IFBLK) {
+                    out.type = DT_BLK;
+                } else if (mode == S_IFDIR) {
+                    out.type = DT_DIR;
+                } else if (mode == S_IFCHR) {
+                    out.type = DT_CHR;
+                } else if (mode == S_IFIFO) {
+                    out.type = DT_FIFO;
+                }
+            }
+        } else if (ent.file_type == EXT2_FT_REG_FILE) {
+            out.type == DT_REG;
+        } else if (ent.file_type == EXT2_FT_DIR) {
+            out.type == DT_DIR;
+        } else if (ent.file_type == EXT2_FT_CHRDEV) {
+            out.type == DT_CHR;
+        } else if (ent.file_type == EXT2_FT_BLKDEV) {
+            out.type == DT_BLK;
+        } else if (ent.file_type == EXT2_FT_FIFO) {
+            out.type == DT_FIFO;
+        } else if (ent.file_type == EXT2_FT_SOCK) {
+            out.type == DT_SOCK;
+        } else if (ent.file_type == EXT2_FT_SYMLINK) {
+            out.type == DT_LNK;
+        }
+
+        out.name_len = ent.name_len;
+        memcpy(&out.name, as([]u8, &ent.name), ent.name_len);
+        out.name[ent.name_len] = 0;
+
+        free(blkbuf);
+        return 1;
+    }
+    free(blkbuf);
+    return 0;
 }
 
 // mount
@@ -485,13 +589,18 @@ fn ext2_init() void {
     ext2_sb_ops.read_inode = ext2_read_inode;
     ext2_sb_ops.put_inode = ext2_put_inode;
     ext2_sb_ops.put_super = ext2_put_super;
-    
+
     ext2_dir_iops.lookup = ext2_inode_lookup;
     ext2_file_iops.lookup = null;
 
-    ext2_file_ops.read = ext2_file_read;
-    ext2_file_ops.lseek = generic_file_lseek;
-    ext2_file_ops.close = generic_file_close;
+    ext2_file_fops.read = ext2_file_read;
+    ext2_file_fops.lseek = generic_file_lseek;
+    ext2_file_fops.close = generic_file_close;
+    ext2_file_fops.readdir = null;
+    ext2_dir_fops.read = null;
+    ext2_dir_fops.lseek = generic_file_lseek;
+    ext2_dir_fops.close = generic_file_close;
+    ext2_dir_fops.readdir = ext2_readdir;
 
     vfs_register(&ext2_fs_type);
 }
