@@ -140,7 +140,7 @@ pub fn kmain(info: *BootInfo) void {
     // file system
     vfs_init();
     ext2_init();
-    initdr_mount(info);
+    initrd_mount(info);
 
     interrupt_enable();
 

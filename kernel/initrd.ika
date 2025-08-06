@@ -1,50 +1,22 @@
 #if !INITRD
 #define INITRD
 
-#include "string.ika"
-#include "boot_info.ika"
+#include "ramdisk.ika"
 #include "panic.ika"
 #include "vfs.ika"
-#include "vmm.ika"
-
-struct RamDisk {
-    data: []u8,
-    n_sectors: u32,
-};
-
-fn ramdisk_read(
-    ctx: *void,
-    lba: u32,
-    cnt: u32,
-    buf: *void
-) i32 {
-    var rd: *RamDisk = ctx;
-    if (lba + cnt > rd.n_sectors) {
-        return -1;
-    }
-    memcpy(buf, rd.data + lba * 512, cnt * 512);
-
-    return 0;
-}
 
 var rd0: RamDisk;
 var rd0_bd: BlockDevice;
 
-var root_sb: *SuperBlock;
+var initrd_sb: *SuperBlock;
 
-fn initdr_mount(info: *BootInfo) void {
+fn initrd_mount(info: *BootInfo) void {
     if (info.module_count == 0) {
-        panic("No initrd module");
+        panic("No initrd");
     }
 
-    rd0.data = as([]u8, info.modules[0].start);
-    rd0.n_sectors = (info.modules[0].end - info.modules[0].start) / 512;
-
-    rd0_bd.read = ramdisk_read;
-    rd0_bd.ctx = &rd0;
-    rd0_bd.sector_size = 512;
-
-    if (vfs_mount(&rd0_bd, "ext2", &root_sb) != 0) {
+    rd_init(&rd0, &rd0_bd, info.modules[0].start, info.modules[0].end);
+    if (vfs_mount(&rd0_bd, "ext2", &initrd_sb) != 0) {
         panic("Failed to mount initrd");
     }
 }
