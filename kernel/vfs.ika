@@ -8,19 +8,46 @@ struct SuperBlock;
 struct INode;
 struct File;
 
-const SB_RDONLY = 0b00000001;
+const SB_RDONLY = 1 << 0;
 
 const SEEK_SET = 0;
 const SEEK_CUR = 1;
 const SEEK_END = 2;
 
-const S_IFDIR = 0b00000001;
-const S_IFREG = 0b00000010;
-const S_IFLNK = 0b00000100;
+const S_IFMT = 0xF000;
+const S_IFSOCK = 0xC000;
+const S_IFLNK = 0xA000;
+const S_IFREG = 0x8000;
+const S_IFBLK = 0x6000;
+const S_IFDIR = 0x4000;
+const S_IFCHR = 0x2000;
+const S_IFIFO = 0x1000;
 
-const O_RDONLY = 0b00000001;
-const O_WDONLY = 0b00000010;
-const ORDWR = O_RDONLY | O_WDONLY;
+const S_ISUID = 0x0800;
+const S_ISGID = 0x0400;
+const S_ISVTX = 0x0200;
+
+const S_IRUSR = 0x0100;
+const S_IWUSR = 0x0080;
+const S_IXUSR = 0x0040;
+const S_IRGRP = 0x0020;
+const S_IWGRP = 0x0010;
+const S_IXGRP = 0x0008;
+const S_IROTH = 0x0004;
+const S_IWOTH = 0x0002;
+const S_IXOTH = 0x0001;
+
+const O_RDONLY    = 0x0000;
+const O_WRONLY    = 0x0001;
+const O_RDWR      = 0x0002;
+const O_APPEND    = 0x0008;
+const O_CREAT     = 0x0200;
+const O_TRUNC     = 0x0400;
+const O_EXCL      = 0x0800;
+const O_NOFOLLOW  = 0x1000;
+const O_PATH      = 0x2000;
+const O_NONBLOCK  = 0x4000;
+const O_DIRECTORY = 0x8000;
 
 struct BlockDevice {
     read: fn(
@@ -61,13 +88,9 @@ struct INodeOps {
         name: []u8,
         out: **INode
     ) i32,
-    read: fn(
-        ino: *INode,
-        off: u32,
-        buf: *void,
-        len: u32
-    ) i32,
 };
+
+struct FileOps;
 
 struct INode {
     ino_no: u32,
@@ -76,6 +99,7 @@ struct INode {
     blocks: u32,
     sb: *SuperBlock,
     ops: *INodeOps,
+    f_ops: *FileOps,
     private: *void,
     reference_count: u32,
 };
@@ -102,7 +126,14 @@ struct FileSystemType {
     next: *FileSystemType,
 };
 
+struct Mount {
+    mountpoint: *INode,
+    child_sb: *SuperBlock,
+    next: *Mount,
+};
+
 var fs_drivers: *FileSystemType = null;
+var fs_mount_list: *Mount = null;
 
 fn vfs_register(fst: *FileSystemType) i32 {
     var p: *FileSystemType = fs_drivers;
@@ -134,12 +165,42 @@ fn _vfs_try_mount(
     return 0;
 }
 
+fn path_resolve(path: []u8, out: **INode) i32;
+
 fn vfs_mount(
     bd: *BlockDevice,
     fs_name: []u8,
+    mount_path: []u8,
     out_sb: **SuperBlock
 ) i32 {
+    var status: i32 = 0;
+
+    var mp: *INode;
+    if (vfs_root_sb == null) {
+        if (mount_path[0] != '/' || mount_path[1] != 0) {
+            return -1;
+        }
+        mp = null;
+    } else {
+        status = path_resolve(mount_path, &mp);
+        if (status != 0) {
+            return status;
+        }
+
+        if ((mp.mode & S_IFMT) != S_IFDIR) {
+            return -1;
+        }
+    }
+
+    var m: *Mount = fs_mount_list;
+    while (m != null) : (m = m.next) {
+        if (m.mountpoint == mp) {
+            return -1;
+        }
+    }
+
     var fst: *FileSystemType;
+    var new_sb: *SuperBlock;
     if (fs_name != null) {
         fst = fs_drivers;
         while (fst != null) : (fst = fst.next) {
@@ -152,15 +213,15 @@ fn vfs_mount(
             return -1;
         }
 
-        var state: u32 = _vfs_try_mount(fst, bd, out_sb);
-        if (state != 0) {
-            return state;
+        status = _vfs_try_mount(fst, bd, &new_sb);
+        if (status != 0) {
+            return status;
         }
     } else {
         // No name, try each driver
         fst = fs_drivers;
         while (fst != null) : (fst = fst.next) {
-            if (_vfs_try_mount(fst, bd, out_sb) == 0) {
+            if (_vfs_try_mount(fst, bd, &new_sb) == 0) {
                 break;
             }
         }
@@ -170,9 +231,18 @@ fn vfs_mount(
         }
     }
 
+    var link: *Mount = malloc(sizeof(Mount));
+    link.mountpoint = mp;
+    link.child_sb = new_sb;
+    link.next = fs_mount_list;
+    fs_mount_list = link;
 
     if (vfs_root_sb == null) {
-        vfs_root_sb = *out_sb;
+        vfs_root_sb = new_sb;
+    }
+
+    if (out_sb != null) {
+        *out_sb = new_sb;
     }
     return 0;
 }
@@ -208,8 +278,16 @@ fn path_resolve(path: []u8, out: **INode) i32 {
     const NAME_BUF_SIZE = 256;
     var name_buf: [NAME_BUF_SIZE]u8;
     while (_path_split_first(&p, &name_buf, NAME_BUF_SIZE) != 0) {
-        if ((cur.mode & S_IFDIR) == 0) {
+        if ((cur.mode & S_IFMT) != S_IFDIR) {
             return -1;
+        }
+
+        var m: *Mount = fs_mount_list;
+        while (m != null) : (m = m.next) {
+            if (m.mountpoint == cur) {
+                cur = m.child_sb.root_inode;
+                break;
+            }
         }
 
         var next: *INode;
@@ -225,35 +303,40 @@ fn path_resolve(path: []u8, out: **INode) i32 {
     return 0;
 }
 
-fn _generic_file_ops_read(f: *File, buf: *void, len: u32) i32 {
-    return f.inode.ops.read(f.inode, f.pos, buf, len);
+fn generic_file_read(f: *File, buf: *void, len: u32) i32 {
+    return 0;
 }
 
-fn _generic_file_ops_lseek(f: *File, off: u32, whence: u32) i32 {
+fn generic_file_lseek(f: *File, off: u32, whence: u32) i32 {
+    var pos: i32 = f.pos;
     if (whence == SEEK_SET) {
-        f.pos = off;
+        pos = off;
     } else if (whence == SEEK_CUR) {
-        f.pos += off;
+        pos += off;
     } else if (whence == SEEK_END) {
-        f.pos = f.inode.size + off;
+        pos = f.inode.size + off;
     } else {
         return -1;
     }
+
+    if (pos < 0 || pos > f.inode.size) {
+        return -1;
+    }
+
+    f.pos = pos;
     return f.pos;
 };
 
-fn _generic_file_ops_close(f: *File) i32 {
+fn generic_file_close(f: *File) i32 {
     free(f);
     return 0;
 }
 
-var _generic_file_ops: FileOps;
-
 fn vfs_open(path: []u8, out: **File) i32 {
     var ino: *INode;
-    var state: i32 = path_resolve(path, &ino);
-    if (state != 0) {
-        return state;
+    var status: i32 = path_resolve(path, &ino);
+    if (status != 0) {
+        return status;
     }
 
     var f: *File = malloc(sizeof(File));
@@ -263,19 +346,16 @@ fn vfs_open(path: []u8, out: **File) i32 {
 
     f.inode = ino;
     f.pos = 0;
-
-    if (_generic_file_ops.read == null) {
-        _generic_file_ops.read = _generic_file_ops_read;
-        _generic_file_ops.lseek = _generic_file_ops_lseek;
-        _generic_file_ops.close = _generic_file_ops_close;
-    }
-
-    f.ops = &_generic_file_ops;
+    f.ops = ino.f_ops;
     *out = f;
     return 0;
 }
 
 fn vfs_read(f: *File, buf: *void, len: u32) i32 {
+    if (f.ops.read == null) {
+        return -1;
+    }
+
     var n: i32 = f.ops.read(f, buf, len);
     if (n > 0) {
         f.pos += n;
@@ -284,6 +364,10 @@ fn vfs_read(f: *File, buf: *void, len: u32) i32 {
 }
 
 fn vfs_lseek(f: *File, off: i32, whence: u32) i32 {
+    if (f.ops.lseek == null) {
+        return -1;
+    }
+
     return f.ops.lseek(f, off, whence);
 }
 

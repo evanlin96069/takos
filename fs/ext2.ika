@@ -7,28 +7,6 @@
 
 const EXT2_SUPER_MAGIC = 0xEF53;
 
-const EXT2_S_IFSOCK = 0xC000;
-const EXT2_S_IFLNK = 0xA000;
-const EXT2_S_IFREG = 0x8000;
-const EXT2_S_IFBLK = 0x6000;
-const EXT2_S_IFDIR = 0x4000;
-const EXT2_S_IFCHR = 0x2000;
-const EXT2_S_IFIFO = 0x1000;
-
-const EXT2_S_ISUID = 0x0800;
-const EXT2_S_ISGID = 0x0400;
-const EXT2_S_ISVTX = 0x0200;
-
-const EXT2_S_IRUSR = 0x0100;
-const EXT2_S_IWUSR = 0x0080;
-const EXT2_S_IXUSR = 0x0040;
-const EXT2_S_IRGRP = 0x0020;
-const EXT2_S_IWGRP = 0x0010;
-const EXT2_S_IXGRP = 0x0008;
-const EXT2_S_IROTH = 0x0004;
-const EXT2_S_IWOTH = 0x0002;
-const EXT2_S_IXOTH = 0x0001;
-
 packed struct Ext2SuperBlock {
 	inodes_count: u32,
 	blocks_count: u32,
@@ -47,7 +25,7 @@ packed struct Ext2SuperBlock {
 	mnt_count: u16,
 	max_mnt_count: u16,
 	magic: u16,
-	state: u16,
+	status: u16,
 	errors: u16,
 	minor_rev_level: u16,
 
@@ -146,6 +124,7 @@ struct Ext2SbInfo {
 var ext2_sb_ops: SuperOps;
 var ext2_dir_iops: INodeOps;
 var ext2_file_iops: INodeOps;
+var ext2_file_ops: FileOps;
 
 var ext2_fs_type: FileSystemType;
 
@@ -218,10 +197,10 @@ fn _ext2_block_map(
         return -1;
     }
 
-    var state: i32 = _ext2_read_block(sb, indir_block, ibuf);
-    if (state != 0) {
+    var status: i32 = _ext2_read_block(sb, indir_block, ibuf);
+    if (status != 0) {
         free(ibuf);
-        return state;
+        return status;
     }
 
     *phys_out = ibuf[logical];
@@ -231,12 +210,14 @@ fn _ext2_block_map(
 
 // INodeOps
 
-fn ext2_inode_read(
-    ino: *INode,
-    off: u32,
+fn ext2_file_read(
+    f: *File,
     buf: *void,
     len: u32
 ) i32 {
+    var ino: *INode = f.inode;
+    var off: u32 = f.pos;
+
     var sb: *SuperBlock = ino.sb;
     var e2: *Ext2SbInfo = sb.private;
 
@@ -290,7 +271,7 @@ fn ext2_inode_lookup(
     name: []u8,
     out: **INode
 ) i32 {
-    if ((dir.mode & S_IFDIR) == 0) {
+    if ((dir.mode & S_IFMT) != S_IFDIR) {
         return -1;
     }
 
@@ -360,16 +341,18 @@ fn ext2_inode_lookup(
 fn ext2_read_inode(ino: *INode) i32 {
     var sb: *SuperBlock = ino.sb;
     var disk: Ext2INodeDisk;
-    var state: i32 = _ext2_load_inode_disk(sb, ino.ino_no, &disk);
-    if (state != 0) {
-        return state;
+    var status: i32 = _ext2_load_inode_disk(sb, ino.ino_no, &disk);
+    if (status != 0) {
+        return status;
     }
 
     ino.mode = disk.mode;
     ino.size = disk.size;
     ino.blocks = disk.blocks;
 
-    if ((disk.mode & 0xF000) == EXT2_S_IFDIR) {
+    ino.f_ops = &ext2_file_ops;
+
+    if ((disk.mode & S_IFMT) == S_IFDIR) {
         ino.ops = &ext2_dir_iops;
     } else {
         ino.ops = &ext2_file_iops;
@@ -502,8 +485,13 @@ fn ext2_init() void {
     ext2_sb_ops.read_inode = ext2_read_inode;
     ext2_sb_ops.put_inode = ext2_put_inode;
     ext2_sb_ops.put_super = ext2_put_super;
+    
     ext2_dir_iops.lookup = ext2_inode_lookup;
-    ext2_file_iops.read = ext2_inode_read;
+    ext2_file_iops.lookup = null;
+
+    ext2_file_ops.read = ext2_file_read;
+    ext2_file_ops.lseek = generic_file_lseek;
+    ext2_file_ops.close = generic_file_close;
 
     vfs_register(&ext2_fs_type);
 }

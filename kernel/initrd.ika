@@ -16,7 +16,7 @@ fn initrd_mount(info: *BootInfo) void {
     }
 
     rd_init(&rd0, &rd0_bd, info.modules[0].start, info.modules[0].end);
-    if (vfs_mount(&rd0_bd, "ext2", &initrd_sb) != 0) {
+    if (vfs_mount(&rd0_bd, "ext2", "/", &initrd_sb) != 0) {
         panic("Failed to mount initrd");
     }
 }
