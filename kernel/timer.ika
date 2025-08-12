@@ -6,10 +6,13 @@
 #include "pit.ika"
 #include "irq.ika"
 
+#include "process.ika"
+
 var _timer_ticks: u64;
 
-fn _timer_cb() void {
+fn _timer_cb(r: *regs_t) void {
     _timer_ticks = u64_add_u32(_timer_ticks, 1);
+    proc_schedule(r);
 }
 
 fn timer_init(hz: u32) void {

@@ -34,12 +34,17 @@ fn irq_uninstall_handler(irq: u8) void {
 }
 
 pub fn irq_handler(r: *regs_t) void {
-    var irq: u8 = r.int_no - 32;
+    var vec: u8 = r.int_no;
+    if (vec < 0x20 || vec > 0x2F) {
+        // not a PIC IRQ
+        return;
+    }
+
+    var irq: u8 = vec - 0x20;
+    pic_send_eoi(irq);
     if (irq_handlers[irq] != null) {
         irq_handlers[irq](r);
     }
-
-    pic_send_eoi(irq);
 }
 
 #endif

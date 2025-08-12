@@ -5,9 +5,12 @@ global isr_stub_table
 isr_stub_table:
 %assign i 0
 %rep 32
+    dd i
     dd isr%+i
 %assign i i+1
 %endrep
+dd 127
+dd isr127
 
 %macro ISR_NOERR 1
 global isr%+%1
@@ -60,6 +63,7 @@ ISR_NOERR 28
 ISR_NOERR 29
 ISR_NOERR 30
 ISR_NOERR 31
+ISR_NOERR 127
 
 extern isr_handler
 isr_common_stub:

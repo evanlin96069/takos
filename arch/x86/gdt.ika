@@ -1,6 +1,10 @@
 #if !GDT
 #define GDT
 
+#include "string.ika"
+
+#include "tss.ika"
+
 packed struct gdt_entry_t {
     limit_low: u16,
     base_low: u16,
@@ -15,7 +19,17 @@ packed struct gdt_ptr_t {
     base: u32,
 };
 
-var gdt: [3]gdt_entry_t;
+enum {
+    GDT_NULL,
+    GDT_KCODE,
+    GDT_KDATA,
+    GDT_UCODE,
+    GDT_UDATA,
+    GDT_TSS,
+    GDT_ENTRIES
+};
+
+var gdt: [GDT_ENTRIES]gdt_entry_t;
 var gdtp: gdt_ptr_t;
 
 fn gdt_set_gate(
@@ -50,17 +64,26 @@ fn gdt_flush(gdt_addr: u32) void {
 }
 
 fn gdt_init() void {
-    gdtp.limit = sizeof([3]gdt_entry_t) - 1;
+    gdtp.limit = sizeof([GDT_ENTRIES]gdt_entry_t) - 1;
     gdtp.base  = as(u32, &gdt);
 
     // 0: Null descriptor
-    gdt_set_gate(0, 0, 0, 0, 0);
+    gdt_set_gate(GDT_NULL, 0, 0, 0, 0);
 
     // 1: Kernel code — base 0, limit 4 GiB, exec/read, ring 0
-    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF);
+    gdt_set_gate(GDT_KCODE, 0, 0xFFFFFFFF, 0x9A, 0xCF);
 
     // 2: Kernel data — base 0, limit 4 GiB, read/write, ring 0
-    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF);
+    gdt_set_gate(GDT_KDATA, 0, 0xFFFFFFFF, 0x92, 0xCF);
+
+    // 3-4: flat user segments (base 0, limit 4 GiB)
+    gdt_set_gate(GDT_UCODE, 0, 0xFFFFFFFF, 0xFA, 0xCF);
+    gdt_set_gate(GDT_UDATA, 0, 0xFFFFFFFF, 0xF2, 0xCF);
+
+    // 5: 32-bit available TSS descriptor
+    var base: u32  = as(u32, &tss);
+    var limit: u32 = base + sizeof(tss_entry_t);
+    gdt_set_gate(GDT_TSS, base, limit, 0xE9, 0x00);
 
     gdt_flush(as(u32, &gdtp));
 }

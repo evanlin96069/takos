@@ -1,0 +1,19 @@
+#if !SYSCALL
+#define SYSCALL
+
+enum {
+    SYS_EXIT,
+    SYS_GETPID,
+    SYS_FORK,
+    SYS_COUNT,
+};
+
+fn syscall0(number: u32) u32 {
+    var result: u32;
+    asm("mov 8(%ebp), %eax"); // number
+    asm("int $0x7F");
+    asm("mov %eax, -4(%ebp)"); // result
+    return result;
+}
+
+#endif

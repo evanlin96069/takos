@@ -1,0 +1,77 @@
+#if !SYS
+#define SYS
+
+#include "idt.ika"
+#include "paging.ika"
+#include "interrupt.ika"
+
+#include "malloc.ika"
+#include "panic.ika"
+#include "process.ika"
+#include "syscall.ika"
+
+var syscall_handlers: [SYS_COUNT]fn(r: *regs_t) u32;
+
+fn sys_exit(r: *regs_t) u32 {
+    // TODO
+    var ret_code: u32 = r.ebx;
+    proc_current.state = P_DEAD;
+    proc_schedule(r);
+    // unreachable
+}
+
+fn sys_getpid(r: *regs_t) u32 {
+    return proc_current.pid;
+}
+
+fn sys_fork(r: *regs_t) u32 {
+    var child_cr3: u32 = paging_clone_directory();
+
+    var kstack: []u8 = malloc(KSTACK_SIZE);
+    var top: u32 = as(u32, kstack) + KSTACK_SIZE;
+
+    var child_esp: u32 = (top - sizeof(regs_t)) & as(u32, 0xF);
+    var child_frame: *regs_t = as(*regs_t, child_esp);
+    memcpy(child_frame, r, sizeof(regs_t));
+
+    // child returns 0 from fork
+    child_frame.eax = 0;
+
+    var child: *Process = malloc(sizeof(Process));
+    child.pid = proc_next_pid;
+    proc_next_pid += 1;
+    child.cr3 = child_cr3;
+    child.kstack_base = kstack;
+    child.kstack_size = KSTACK_SIZE;
+    child.esp = child_esp;
+
+    // enqueue round-robin ring
+    if (proc_current.next != null) {
+        child.next = proc_current.next;
+    } else {
+        child.next = proc_current;
+    }
+    proc_current.next = child;
+
+    return child.pid;
+}
+
+fn syscall_isr(r: *regs_t) void {
+    if (r.eax < SYS_COUNT) {
+        interrupt_disable();
+        r.eax = syscall_handlers[r.eax](r);
+        return;
+    }
+
+    panic("Unknown syscall");
+}
+
+fn syscall_init() void {
+    isr_install_handler(0x7F, syscall_isr);
+
+    syscall_handlers[SYS_EXIT] = sys_exit;
+    syscall_handlers[SYS_GETPID] = sys_getpid;
+    syscall_handlers[SYS_FORK] = sys_fork;
+}
+
+#endif

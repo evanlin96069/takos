@@ -1,0 +1,156 @@
+#if !PROCESS
+#define PROCESS
+
+#include "idt.ika"
+#include "syscall.ika"
+#include "malloc.ika"
+
+const KERNEL_CS = 0x08;
+const KERNEL_DS = 0x10;
+
+const KSTACK_SIZE = 16 * PAGE_SIZE;
+
+enum {
+    P_UNUSED,
+    P_RUNNING,
+    P_DEAD,
+};
+
+struct Process {
+    pid: i32,
+    state: i32,
+    cr3: u32,
+    kstack_base: []u8,
+    kstack_size: u32,
+    esp: u32, // saved kerenl ESP
+    next: *Process,
+};
+
+var proc_current: *Process = null;
+var proc_runq: *Process = null;
+var proc_next_pid: u32 = 0;
+
+extern fn ctx_switch(new_cr3: u32, new_esp: u32) void;
+
+fn proc_schedule(r: *regs_t) void {
+    if (proc_current == null) {
+        return;
+    }
+
+    var next: *Process = proc_current.next;
+    if (next == null || next == proc_current) {
+        return;
+    }
+
+    proc_current.esp = as(u32, r);
+
+    proc_current = next;
+    ctx_switch(proc_current.cr3, proc_current.esp);
+}
+
+extern fn kthread_entry() void;
+
+fn proc_init_frame(
+    stack_top: []u8,
+    entry: fn(arg: *void) u32,
+    args: *void,
+    cs: u16,
+    ds: u16
+) u32 {
+    var sp: []u32 = as([]u32, stack_top);
+
+    sp -= 1; *sp = 0x202;                   // EFLAGS
+    sp -= 1; *sp = cs;                      // CS
+    sp -= 1; *sp = as(u32, kthread_entry);  // EIP
+
+    sp -= 1; *sp = 0;                       // err_code
+    sp -= 1; *sp = 0;                       // int_no
+
+    sp -= 1; *sp = as(u32, entry);          // EAX
+    sp -= 1; *sp = 0;                       // ECX
+    sp -= 1; *sp = 0;                       // EDX
+    sp -= 1; *sp = as(u32, args);           // EBX
+    sp -= 1; *sp = 0;                       // ESP (ignored)
+    sp -= 1; *sp = 0;                       // EBP
+    sp -= 1; *sp = 0;                       // ESI
+    sp -= 1; *sp = 0;                       // EDI
+
+    sp -= 1; *sp = ds;                      // DS
+    sp -= 1; *sp = ds;                      // ES
+    sp -= 1; *sp = ds;                      // FS
+    sp -= 1; *sp = ds;                      // GS
+
+    return as(u32, sp);
+}
+
+fn proc_create(
+    entry: fn(args: *void) u32,
+    args: *void,
+    cr3: u32
+) *Process {
+    var p: *Process = malloc(sizeof(Process));
+    memset(p, 0, sizeof(Process));
+    p.pid = proc_next_pid;
+    proc_next_pid += 1;
+    p.cr3 = cr3;
+
+    p.kstack_base = malloc(KSTACK_SIZE);
+    p.kstack_size = KSTACK_SIZE;
+
+    p.esp = proc_init_frame(
+        p.kstack_base + p.kstack_size,
+        entry,
+        args,
+        KERNEL_CS,
+        KERNEL_DS
+    );
+
+    if (proc_runq == null) {
+        proc_runq = p;
+        p.next = p;
+    } else {
+        p.next = proc_runq.next;
+        proc_runq.next = p;
+    }
+
+    return p;
+}
+
+fn idle_main(args: *void) u32 {
+    while (true) {
+        "[idle] %d\n", syscall0(SYS_GETPID);
+    }
+}
+
+fn init_main(args: *void) u32 {
+
+    // var pid: u32 = syscall0(SYS_FORK);
+    // if (pid == 0) {
+    //     "[child] pid=%d\n", syscall0(SYS_GETPID);
+    // } else {
+    //     "[parent] pid=%d, child=%d\n", syscall0(SYS_GETPID), pid;
+    // }
+
+    while (true) {
+        "[main] %d\n", syscall0(SYS_GETPID);
+    }
+}
+
+fn proc_init() void {
+    var cr3: u32 = paging_kernel_dir_phys;
+
+    var idle: *Process = proc_create(idle_main, null, cr3);
+    var init: *Process = proc_create(init_main, null, cr3);
+
+    proc_current = idle;
+}
+
+extern fn sched_start(new_cr3: u32, new_esp: u32) void;
+
+fn proc_start() void {
+    var first: *Process = proc_current.next;
+    proc_current = first;
+    sched_start(first.cr3, first.esp);
+}
+
+#endif

@@ -6,9 +6,15 @@
 
 #include "print.ika"
 
+const ISR_COUNT = 32;
+
 var isr_handlers: [256]fn(regs: *regs_t) void;
 
-extern var isr_stub_table: [32]*void;
+struct isr_stub_t {
+    index: u32,
+    func: *void,
+};
+extern var isr_stub_table: [ISR_COUNT + 1]isr_stub_t;
 
 fn exc_msg_init() void;
 
@@ -16,10 +22,10 @@ fn isr_init() void {
     exc_msg_init();
 
     var i: u32 = 0;
-    while (i < 32) : (i += 1) {
+    while (i < ISR_COUNT + 1) : (i += 1) {
         idt_set_gate(
-            i,
-            as(u32, isr_stub_table[i]),
+            isr_stub_table[i].index,
+            as(u32, isr_stub_table[i].func),
             0x08,
             0x8E
         );
@@ -71,17 +77,18 @@ fn exc_msg_init() void {
 }
 
 pub fn isr_handler(r: *regs_t) void {
-    if (r.int_no >= 32) {
-        return;
-    }
-
     if (isr_handlers[r.int_no] != null) {
         isr_handlers[r.int_no](r);
         return;
     }
 
-    "\n*** EXCEPTION: %s ***\n", exc_msg[r.int_no];
-    panic("Unhandled interrupt.");
+    if (r.int_no < ISR_COUNT) {
+        "\n*** EXCEPTION: %s ***\n", exc_msg[r.int_no];
+    } else {
+        "\n*** EXCEPTION: (%d) ***\n", r.int_no;
+    }
+
+    panic("Unhandled interrupt");
 }
 
 #endif

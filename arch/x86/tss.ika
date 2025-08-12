@@ -1,0 +1,65 @@
+#if !TSS
+#define TSS
+
+#include "string.ika"
+#include "pmm.ika"
+#include "vmm.ika"
+#include "panic.ika"
+
+packed struct tss_entry_t {
+    prev_tss: u32, // unused
+    esp0: u32,
+    ss0: u32,
+    esp1: u32,
+    ss1: u32,
+	esp2: u32,
+	ss2: u32,
+	cr3: u32,
+	eip: u32,
+	eflags: u32,
+	eax: u32,
+	ecx: u32,
+	edx: u32,
+	ebx: u32,
+	esp: u32,
+	ebp: u32,
+	esi: u32,
+	edi: u32,
+	es: u32,
+	cs: u32,
+	ss: u32,
+	ds: u32,
+	fs: u32,
+	gs: u32,
+	ldt: u32,
+	trap: u16,
+	iomap_base: u16,
+};
+
+var tss: tss_entry_t;
+
+fn tss_flush() void {
+    asm("movw $0x2B, %ax");
+    asm("ltr %ax");
+}
+
+fn tss_init() void {
+    memset(&tss, 0, sizeof(tss_entry_t));
+
+    tss.ss0 = 0x10;
+	tss.esp0 = 0x00;
+	tss.cs = 0x0B;
+	tss.ss = 0x13;
+	tss.ds = 0x13;
+	tss.es = 0x13;
+	tss.fs = 0x13;
+	tss.gs = 0x13;
+
+	tss_flush();
+}
+
+fn tss_set_kstack(stack: u32) void {
+	tss.esp0 = stack;
+}
+
+#endif

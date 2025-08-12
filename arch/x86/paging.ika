@@ -9,6 +9,10 @@
 
 #include "string.ika"
 
+const PDE_RECURSIVE_SLOT = 1023;
+const PT_BASE = 0xFFC00000;
+const PD_VIRT = 0xFFFFF000;
+
 var paging_kernel_dir: []u32;
 var paging_kernel_dir_phys: u32;
 
@@ -23,6 +27,24 @@ const PG_ACCESSED = 0x020;
 const PG_DIRTY = 0x040;
 const PG_4MB = 0x080;
 const PG_GLOBAL = 0x100;
+
+const _TMP_MAP1 = 0xDFFFF000;
+const _TMP_MAP2 = 0xDFFFE000;
+
+fn paging_map(vaddr: u32, paddr: u32, flags: u32) void;
+fn paging_unmap(vaddr: u32) void;
+fn invlpg(vaddr: *void) void;
+
+fn _map_tmp(tmp: u32, phys: u32) *void {
+    paging_map(tmp, phys, PG_RW | PG_GLOBAL);
+    invlpg(as(*void, tmp));
+    return as(*void, tmp);
+}
+
+fn _unmap_tmp(vaddr: *void) void {
+    paging_unmap(as(u32, vaddr));
+    invlpg(vaddr);
+}
 
 fn pd_index(vaddr: u32) u32 {
     return (vaddr >> 22) & 0x3FF;
@@ -133,15 +155,89 @@ fn paging_map_region(
     }
 }
 
-fn _page_fault_handler(r: *regs_t) void {
+fn paging_clone_directory() u32 {
+    var new_pd_phys: u32 = as(u32, pmm_alloc_page());
+    var new_pd: []u32 = _map_tmp(_TMP_MAP1, new_pd_phys);
+    memset(new_pd, 0, PAGE_SIZE);
+
+    // walk parent PD
+    var curr_pd: []u32 = as([]u32, PD_VIRT);
+    var pdi: u32 = 0;
+    while (pdi < PDE_RECURSIVE_SLOT) : (pdi += 1) {
+        var pde: u32 = curr_pd[pdi];
+        if ((pde & PG_PRESENT) == 0) {
+            continue;
+        }
+
+        var parent_pt: []u32 = as([]u32, PT_BASE + (pdi << 12));
+
+        var has_non_global: bool = false;
+        var pti: u32 = 0;
+        while (pti < 1024) : (pti += 1) {
+            var pte: u32 = parent_pt[pti];
+            if ((pte & PG_PRESENT) != 0 && ((pte & PG_GLOBAL) == 0)) {
+                has_non_global = true;
+                break;
+            }
+        }
+
+        if (!has_non_global) {
+            new_pd[pdi] = pde;
+            continue;
+        }
+
+        var child_pt_phys: u32 = as(u32, pmm_alloc_page());
+        var child_pt: []u32 = _map_tmp(_TMP_MAP2, child_pt_phys);
+        memset(child_pt, 0, PAGE_SIZE);
+
+        // copy PTEs
+        pti = 0;
+        while (pti < 1024) : (pti += 1) {
+            var pte: u32 = parent_pt[pti];
+            if ((pte & PG_PRESENT) == 0) {
+                continue;
+            }
+
+            if ((pte & PG_GLOBAL) != 0) {
+                // share kernel mapping
+                child_pt[pti] = pte;
+            } else {
+                var src_phys: u32 = pte & ~as(u32, 0xFFF);
+                var dst_phys: u32 = as(u32, pmm_alloc_page());
+
+                var src: *void = _map_tmp(_TMP_MAP1, src_phys);
+                var dst: *void = _map_tmp(_TMP_MAP2, dst_phys);
+                memcpy(dst, src, PAGE_SIZE);
+                _unmap_tmp(dst);
+                _unmap_tmp(src);
+
+                child_pt[pti] = (dst_phys | (pte & 0xFFF) | PG_PRESENT);
+            }
+        }
+
+        var pde_flags: u32 = pde & 0xFFF;
+        new_pd[pdi] = child_pt_phys | pde_flags | PG_PRESENT;
+        _unmap_tmp(child_pt);
+    }
+
+    new_pd[PDE_RECURSIVE_SLOT] = (new_pd_phys | PG_PRESENT | PG_RW);
+    _unmap_tmp(new_pd);
+    return new_pd_phys;
+}
+
+fn page_fault_handler(r: *regs_t) void {
     var cr2: u32;
     asm("movl %cr2, %eax");
     asm("movl %eax, -4(%ebp)");
-    panic("Segmentation fault at address %p (err=%x, eip=%x)", cr2, r.err_code, r.eip);
+
+    var ec: u32 = r.err_code;
+    panic("Page fault at %p (EIP=%x err=%x P=%d W=%d U=%d RSVD=%d I=%d)",
+            cr2, r.eip, ec,
+            ec & 1, (ec >> 1) & 1, (ec >> 2) & 1, (ec >> 3) & 1, (ec >> 4) & 1);
 }
 
 fn paging_install_page_fault_handler() void {
-    isr_install_handler(14, _page_fault_handler);
+    isr_install_handler(14, page_fault_handler);
 }
 
 #endif

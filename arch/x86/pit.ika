@@ -8,15 +8,15 @@ const PIT_BASE_FREQ = 1193182;
 const PIT_CMD = 0x43;
 const PIT_CH0 = 0x40;
 
-var _pit_cb: fn() void = null;
+var _pit_cb: fn(r: *regs_t) void = null;
 
 fn _pit_irq_cb(r: *regs_t) void {
     if (_pit_cb != null) {
-        _pit_cb();
+        _pit_cb(r);
     }
 }
 
-fn pit_install_callback(cb: fn() void) void {
+fn pit_install_callback(cb: fn(r: *regs_t) void) void {
     _pit_cb = cb;
 }
 

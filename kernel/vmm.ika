@@ -39,7 +39,7 @@ fn vmm_init(info: *BootInfo) void {
 
 
     // recursive PDE
-    paging_kernel_dir[1023] = as(u32, paging_kernel_dir) | PG_PRESENT | PG_RW;
+    paging_kernel_dir[PDE_RECURSIVE_SLOT] = as(u32, paging_kernel_dir) | PG_PRESENT | PG_RW;
     paging_kernel_dir = as([]u32, 0xFFFFF000);
 
 
