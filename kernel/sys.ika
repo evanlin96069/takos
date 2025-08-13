@@ -13,9 +13,20 @@
 var syscall_handlers: [SYS_COUNT]fn(r: *regs_t) u32;
 
 fn sys_exit(r: *regs_t) u32 {
-    // TODO
-    var ret_code: u32 = r.ebx;
-    proc_current.state = P_DEAD;
+    var status: u32 = r.ebx;
+
+    var p: *Process = proc_current;
+    p.exit_status = status & 0xFF;
+    p.state = P_ZOMBIE;
+
+    if (p == init_proc) {
+        panic("init (PID 1) exited with status %d", p.exit_status);
+    }
+
+    proc_reparent_children(p, init_proc);
+
+    proc_wake_waitpid_if_match(p.parent, p);
+
     proc_schedule(r);
     // unreachable
 }
@@ -25,35 +36,39 @@ fn sys_getpid(r: *regs_t) u32 {
 }
 
 fn sys_fork(r: *regs_t) u32 {
-    var child_cr3: u32 = paging_clone_directory();
+    return -1;
+}
 
-    var kstack: []u8 = malloc(KSTACK_SIZE);
-    var top: u32 = as(u32, kstack) + KSTACK_SIZE;
+fn sys_waitpid(r: *regs_t) u32 {
+    var want: i32 = r.ebx;
+    var p_status: *u32 = as(*u32, r.ecx);
 
-    var child_esp: u32 = (top - sizeof(regs_t)) & as(u32, 0xF);
-    var child_frame: *regs_t = as(*regs_t, child_esp);
-    memcpy(child_frame, r, sizeof(regs_t));
-
-    // child returns 0 from fork
-    child_frame.eax = 0;
-
-    var child: *Process = malloc(sizeof(Process));
-    child.pid = proc_next_pid;
-    proc_next_pid += 1;
-    child.cr3 = child_cr3;
-    child.kstack_base = kstack;
-    child.kstack_size = KSTACK_SIZE;
-    child.esp = child_esp;
-
-    // enqueue round-robin ring
-    if (proc_current.next != null) {
-        child.next = proc_current.next;
-    } else {
-        child.next = proc_current;
+    var z: *Process = proc_current.child_head;
+    while (z != null) {
+        if (z.state == P_ZOMBIE && (want == -1 || want == z.pid)) {
+            break;
+        }
+        z = z.sibling_next;
     }
-    proc_current.next = child;
 
-    return child.pid;
+    if (z != null) {
+        var pid: i32 = z.pid;
+        if (p_status != null) {
+            *p_status = z.exit_status;
+        }
+        proc_reap(z);
+        r.eax = pid;
+        return 0;
+    }
+
+    proc_current.state = P_BLOCKED;
+    proc_current.wait_type = WAIT_WAITPID;
+    proc_current.wait_want_pid = want;
+    proc_current.wait_regs = r;
+    proc_current.wait_p_status = p_status;
+
+    proc_schedule(r);
+    // unreachable
 }
 
 fn syscall_isr(r: *regs_t) void {
@@ -63,7 +78,7 @@ fn syscall_isr(r: *regs_t) void {
         return;
     }
 
-    panic("Unknown syscall");
+    panic("Unknown syscall: %d", r.eax);
 }
 
 fn syscall_init() void {
@@ -72,6 +87,7 @@ fn syscall_init() void {
     syscall_handlers[SYS_EXIT] = sys_exit;
     syscall_handlers[SYS_GETPID] = sys_getpid;
     syscall_handlers[SYS_FORK] = sys_fork;
+    syscall_handlers[SYS_WAITPID] = sys_waitpid;
 }
 
 #endif

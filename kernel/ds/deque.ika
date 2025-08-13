@@ -1,0 +1,90 @@
+#if !DEQUE
+#define DEQUE
+
+struct DequeNode {
+    prev: *DequeNode,
+    next: *DequeNode,
+};
+
+struct Deque {
+    head: *DequeNode,
+    tail: *DequeNode,
+};
+
+fn deque_init(dq: *Deque) void {
+    dq.head = null;
+    dq.tail = null;
+}
+
+fn deque_is_empty(dq: *Deque) bool {
+    return dq.head == null;
+}
+
+fn deque_link(
+    dq: *Deque,
+    prev: *DequeNode,
+    n: *DequeNode,
+    next: *DequeNode
+) void {
+    n.prev = prev;
+    n.next = next;
+
+    if (prev != null) {
+        prev.next = n;
+    } else {
+        dq.head = n;
+    }
+
+    if (next != null) {
+        next.prev = n;
+    } else {
+        dq.tail = n;
+    }
+}
+
+fn deque_push_front(dq: *Deque, n: *DequeNode) void {
+    deque_link(dq, null, n, dq.head);
+}
+
+fn deque_push_back(dq: *Deque, n: *DequeNode) void {
+    deque_link(dq, dq.tail, n, null);
+}
+
+fn deque_unlink(dq: *Deque, n: *DequeNode) *DequeNode {
+    if (n == null) {
+        return null;
+    }
+
+    var prev: *DequeNode = n.prev;
+    var next: *DequeNode = n.next;
+
+    if (prev != null) {
+        prev.next = next;
+    } else {
+        dq.head = next;
+    }
+
+    if (next != null) {
+        next.prev = prev;
+    } else {
+        dq.tail = prev;
+    }
+
+    n.prev = null;
+    n.next = null;
+    return n;
+}
+
+fn deque_pop_front(dq: *Deque) *DequeNode {
+    return deque_unlink(dq, dq.head);
+}
+
+fn deque_pop_back(dq: *Deque) *DequeNode {
+    return deque_unlink(dq, dq.tail);
+}
+
+fn deque_remove(dq: *Deque, n: *DequeNode) void {
+    deque_unlink(dq, n);
+}
+
+#endif

@@ -28,8 +28,10 @@ const PG_DIRTY = 0x040;
 const PG_4MB = 0x080;
 const PG_GLOBAL = 0x100;
 
-const _TMP_MAP1 = 0xDFFFF000;
-const _TMP_MAP2 = 0xDFFFE000;
+const _TMP_PD = 0xDFFF0000;
+const _TMP_PT= 0xDFFF1000;
+const _TMP_SRC = 0xDFFF2000;
+const _TMP_DST = 0xDFFF3000;
 
 fn paging_map(vaddr: u32, paddr: u32, flags: u32) void;
 fn paging_unmap(vaddr: u32) void;
@@ -153,76 +155,6 @@ fn paging_map_region(
     while (off < size) : (off += PAGE_SIZE) {
         paging_map(vaddr + off, paddr + off, flags);
     }
-}
-
-fn paging_clone_directory() u32 {
-    var new_pd_phys: u32 = as(u32, pmm_alloc_page());
-    var new_pd: []u32 = _map_tmp(_TMP_MAP1, new_pd_phys);
-    memset(new_pd, 0, PAGE_SIZE);
-
-    // walk parent PD
-    var curr_pd: []u32 = as([]u32, PD_VIRT);
-    var pdi: u32 = 0;
-    while (pdi < PDE_RECURSIVE_SLOT) : (pdi += 1) {
-        var pde: u32 = curr_pd[pdi];
-        if ((pde & PG_PRESENT) == 0) {
-            continue;
-        }
-
-        var parent_pt: []u32 = as([]u32, PT_BASE + (pdi << 12));
-
-        var has_non_global: bool = false;
-        var pti: u32 = 0;
-        while (pti < 1024) : (pti += 1) {
-            var pte: u32 = parent_pt[pti];
-            if ((pte & PG_PRESENT) != 0 && ((pte & PG_GLOBAL) == 0)) {
-                has_non_global = true;
-                break;
-            }
-        }
-
-        if (!has_non_global) {
-            new_pd[pdi] = pde;
-            continue;
-        }
-
-        var child_pt_phys: u32 = as(u32, pmm_alloc_page());
-        var child_pt: []u32 = _map_tmp(_TMP_MAP2, child_pt_phys);
-        memset(child_pt, 0, PAGE_SIZE);
-
-        // copy PTEs
-        pti = 0;
-        while (pti < 1024) : (pti += 1) {
-            var pte: u32 = parent_pt[pti];
-            if ((pte & PG_PRESENT) == 0) {
-                continue;
-            }
-
-            if ((pte & PG_GLOBAL) != 0) {
-                // share kernel mapping
-                child_pt[pti] = pte;
-            } else {
-                var src_phys: u32 = pte & ~as(u32, 0xFFF);
-                var dst_phys: u32 = as(u32, pmm_alloc_page());
-
-                var src: *void = _map_tmp(_TMP_MAP1, src_phys);
-                var dst: *void = _map_tmp(_TMP_MAP2, dst_phys);
-                memcpy(dst, src, PAGE_SIZE);
-                _unmap_tmp(dst);
-                _unmap_tmp(src);
-
-                child_pt[pti] = (dst_phys | (pte & 0xFFF) | PG_PRESENT);
-            }
-        }
-
-        var pde_flags: u32 = pde & 0xFFF;
-        new_pd[pdi] = child_pt_phys | pde_flags | PG_PRESENT;
-        _unmap_tmp(child_pt);
-    }
-
-    new_pd[PDE_RECURSIVE_SLOT] = (new_pd_phys | PG_PRESENT | PG_RW);
-    _unmap_tmp(new_pd);
-    return new_pd_phys;
 }
 
 fn page_fault_handler(r: *regs_t) void {

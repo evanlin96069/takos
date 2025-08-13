@@ -31,13 +31,13 @@ INITRD_DIR			:= initrd
 INITRD_IMG			:= $(BOOT_DIR)/initrd.ext2
 
 IKA_SRC := $(shell find arch drivers fs kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.ika')
-ASM_SRC := $(shell find arch drivers fs kernel lib -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
+ASM_SRC := $(shell find arch -not -path '$(BOOTLOADER_DIR)/*' -name '*.s')
 ASM_OBJS := $(patsubst %,$(OBJ_DIR)/%.o,$(basename $(ASM_SRC)))
 
 OBJ_FILES := $(BOOT_OBJS) $(ASM_OBJS) $(KERNEL_OBJ)
 
 IKAC_FLAGS          := -S -I lib
-KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I fs -I kernel -I kernel/lib -I boot
+KERNEL_INC_FLAGS    := $(IKAC_FLAGS) -e kmain -I $(ARCH_DIR) -I drivers -I fs -I kernel -I kernel/lib -I kernel/ds -I boot
 BOOT_INC_FLAGS      := $(IKAC_FLAGS) -e $(BOOTLOADER_ENTRY) -I boot
 LDFLAGS    		    := -nostdlib -z max-page-size=0x1000
 

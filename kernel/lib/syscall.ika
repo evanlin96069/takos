@@ -5,6 +5,7 @@ enum {
     SYS_EXIT,
     SYS_GETPID,
     SYS_FORK,
+    SYS_WAITPID,
     SYS_COUNT,
 };
 
@@ -12,6 +13,20 @@ fn syscall0(number: u32) u32 {
     var result: u32;
     asm("mov 8(%ebp), %eax"); // number
     asm("int $0x7F");
+    asm("mov %eax, -4(%ebp)"); // result
+    return result;
+}
+
+fn syscall1(number: u32, arg1: u32) u32 {
+    var result: u32;
+    asm("push %ebx");
+
+    asm("mov 8(%ebp), %eax"); // number
+    asm("mov 12(%ebp), %ebx"); // arg1
+    asm("int $0x7F");
+
+    asm("pop %ebx");
+
     asm("mov %eax, -4(%ebp)"); // result
     return result;
 }

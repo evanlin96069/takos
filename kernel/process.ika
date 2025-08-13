@@ -1,7 +1,10 @@
 #if !PROCESS
 #define PROCESS
 
+#include "deque.ika"
+
 #include "idt.ika"
+
 #include "syscall.ika"
 #include "malloc.ika"
 
@@ -12,40 +15,78 @@ const KSTACK_SIZE = 16 * PAGE_SIZE;
 
 enum {
     P_UNUSED,
-    P_RUNNING,
-    P_DEAD,
+    P_RUNNABLE,
+    P_BLOCKED,
+    P_ZOMBIE,
+};
+
+enum {
+    WAIT_WAITPID,
+    WAIT_SLEEP,
 };
 
 struct Process {
+    prev: *Process,
+    next: *Process,
+
     pid: i32,
     state: i32,
     cr3: u32,
     kstack_base: []u8,
     kstack_size: u32,
     esp: u32, // saved kerenl ESP
-    next: *Process,
+
+    parent: *Process,
+    child_head: *Process,
+    sibling_next: *Process,
+
+    exit_status: u32,
+
+    wait_type: i32,
+    // waitpid
+    wait_want_pid: i32,
+    wait_regs: *regs_t,
+    wait_p_status: *u32,
+    // sleeping
+    wakeup_tick: u32,
 };
 
+var init_proc: *Process;
+var idle_proc: *Process;
+
 var proc_current: *Process = null;
-var proc_runq: *Process = null;
-var proc_next_pid: u32 = 0;
+var proc_runq: Deque;
+var proc_next_pid: i32 = 0;
 
 extern fn ctx_switch(new_cr3: u32, new_esp: u32) void;
 
+fn proc_switch_to(p: *Process) void {
+    proc_current = p;
+    ctx_switch(p.cr3, p.esp);
+}
+
 fn proc_schedule(r: *regs_t) void {
     if (proc_current == null) {
-        return;
+        panic("No current process");
     }
 
-    var next: *Process = proc_current.next;
-    if (next == null || next == proc_current) {
+    // TODO: wakeup sleep processes
+
+    var next: *Process = as(*Process, deque_pop_front(&proc_runq));
+    if (next == null) {
+        if (proc_current.state != P_RUNNABLE) {
+            proc_switch_to(idle_proc);
+        }
         return;
     }
 
     proc_current.esp = as(u32, r);
 
-    proc_current = next;
-    ctx_switch(proc_current.cr3, proc_current.esp);
+    if (proc_current != idle_proc && proc_current.state == P_RUNNABLE) {
+        deque_push_back(&proc_runq, as(*DequeNode, proc_current));
+    }
+    "switch from %d to %d\n", proc_current.pid, next.pid;
+    proc_switch_to(next);
 }
 
 extern fn kthread_entry() void;
@@ -91,6 +132,7 @@ fn proc_create(
     var p: *Process = malloc(sizeof(Process));
     memset(p, 0, sizeof(Process));
     p.pid = proc_next_pid;
+    p.state = P_RUNNABLE;
     proc_next_pid += 1;
     p.cr3 = cr3;
 
@@ -105,52 +147,85 @@ fn proc_create(
         KERNEL_DS
     );
 
-    if (proc_runq == null) {
-        proc_runq = p;
-        p.next = p;
-    } else {
-        p.next = proc_runq.next;
-        proc_runq.next = p;
+    return p;
+}
+
+fn proc_reap(z: *Process) void {
+    var pp: **Process = &z.parent.child_head;
+    while (*pp != null && *pp != z) {
+        pp = &(*pp).sibling_next;
     }
 
-    return p;
+    if (*pp == z) {
+        *pp = z.sibling_next;
+    }
+
+    free(z.kstack_base);
+    free(z);
+}
+
+fn proc_wakeup(p: *Process) void {
+    if (p.state != P_BLOCKED) {
+        return;
+    }
+
+    p.state = P_RUNNABLE;
+    deque_push_front(&proc_runq, as(*DequeNode, p));
+}
+
+fn proc_wake_waitpid_if_match(parent: *Process, child: *Process) void {
+    if (parent.state != P_BLOCKED || parent.wait_type != WAIT_WAITPID) {
+        return;
+    }
+
+    if (parent.wait_want_pid == -1 || parent.wait_want_pid == child.pid) {
+        parent.wait_regs.eax = child.pid;
+        *parent.wait_p_status = child.exit_status;
+        proc_wakeup(parent);
+        proc_reap(child);
+    }
+}
+
+fn proc_add_child(parent: *Process, child: *Process) void {
+    child.parent = parent;
+    child.sibling_next = parent.child_head;
+    parent.child_head = child;
+
+    if (child.state == P_ZOMBIE) {
+        proc_wake_waitpid_if_match(parent, child);
+    }
+}
+
+fn proc_reparent_children(parent: *Process, adopt: *Process) void {
+    var c: *Process = parent.child_head;
+    while (c != null) {
+        var next: *Process = c.sibling_next;
+        proc_add_child(adopt, c);
+        c = next;
+    }
+
+    parent.child_head = null;
 }
 
 fn idle_main(args: *void) u32 {
     while (true) {
-        "[idle] %d\n", syscall0(SYS_GETPID);
+        asm("hlt");
     }
 }
 
-fn init_main(args: *void) u32 {
+fn proc_init(init: fn(args: *void) u32) void {
+    deque_init(&proc_runq);
 
-    // var pid: u32 = syscall0(SYS_FORK);
-    // if (pid == 0) {
-    //     "[child] pid=%d\n", syscall0(SYS_GETPID);
-    // } else {
-    //     "[parent] pid=%d, child=%d\n", syscall0(SYS_GETPID), pid;
-    // }
-
-    while (true) {
-        "[main] %d\n", syscall0(SYS_GETPID);
-    }
-}
-
-fn proc_init() void {
     var cr3: u32 = paging_kernel_dir_phys;
 
-    var idle: *Process = proc_create(idle_main, null, cr3);
-    var init: *Process = proc_create(init_main, null, cr3);
+    idle_proc = proc_create(idle_main, null, cr3);
+    init_proc = proc_create(init, null, cr3);
 
-    proc_current = idle;
+    proc_current = init_proc;
 }
 
-extern fn sched_start(new_cr3: u32, new_esp: u32) void;
-
 fn proc_start() void {
-    var first: *Process = proc_current.next;
-    proc_current = first;
-    sched_start(first.cr3, first.esp);
+    proc_switch_to(proc_current);
 }
 
 #endif
