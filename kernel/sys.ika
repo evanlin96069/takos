@@ -35,8 +35,48 @@ fn sys_getpid(r: *regs_t) u32 {
     return proc_current.pid;
 }
 
-fn sys_fork(r: *regs_t) u32 {
-    return -1;
+fn _fork_child_frame(r: *regs_t, child_stack_top: []u8) u32 {
+    var sp: []u32 = as([]u32, child_stack_top);
+
+    if ((r.cs & 3) == 3) {
+        // user-mode
+        sp -= 1; *sp = r.ss;        // SS
+        sp -= 1; *sp = r.useresp;   // USER ESP
+    }
+
+    sp -= 1; *sp = r.eflags;        // EFLAGS
+    sp -= 1; *sp = r.cs;            // CS
+    sp -= 1; *sp = r.eip;           // EIP
+
+    sp -= 1; *sp = 0;               // err_code
+    sp -= 1; *sp = 0;               // int_no 
+
+    sp -= 1; *sp = 0;               // EAX = 0 in child
+    sp -= 1; *sp = r.ecx;
+    sp -= 1; *sp = r.edx;
+    sp -= 1; *sp = r.ebx;
+    sp -= 1; *sp = 0;               // ESP (ignored)
+    sp -= 1; *sp = r.ebp;
+    sp -= 1; *sp = r.esi;
+    sp -= 1; *sp = r.edi;
+
+    sp -= 1; *sp = r.ds;
+    sp -= 1; *sp = r.es;
+    sp -= 1; *sp = r.fs;
+    sp -= 1; *sp = r.gs;
+
+    return as(u32, sp);
+}
+
+fn sys_spawn(r: *regs_t) u32 {
+    var entry: fn(args: *void) u32 = as(fn(args: *void) u32, r.ebx);
+    var args: *void = as(*void, r.ecx);
+
+    var child: *Process = proc_create(proc_current, entry, args);
+
+    deque_push_back(&proc_runq, as(*DequeNode, child));
+
+    return child.pid;
 }
 
 fn sys_waitpid(r: *regs_t) u32 {
@@ -45,20 +85,23 @@ fn sys_waitpid(r: *regs_t) u32 {
 
     var z: *Process = proc_current.child_head;
     while (z != null) {
-        if (z.state == P_ZOMBIE && (want == -1 || want == z.pid)) {
+        if (want == -1 || want == z.pid) {
             break;
         }
         z = z.sibling_next;
     }
 
-    if (z != null) {
+    if (z == null) {
+        return -1;
+    }
+
+    if (z.state == P_ZOMBIE) {
         var pid: i32 = z.pid;
         if (p_status != null) {
             *p_status = z.exit_status;
         }
         proc_reap(z);
-        r.eax = pid;
-        return 0;
+        return pid;
     }
 
     proc_current.state = P_BLOCKED;
@@ -86,7 +129,7 @@ fn syscall_init() void {
 
     syscall_handlers[SYS_EXIT] = sys_exit;
     syscall_handlers[SYS_GETPID] = sys_getpid;
-    syscall_handlers[SYS_FORK] = sys_fork;
+    syscall_handlers[SYS_SPAWN] = sys_spawn;
     syscall_handlers[SYS_WAITPID] = sys_waitpid;
 }
 

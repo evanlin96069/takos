@@ -21,9 +21,9 @@ global kthread_entry
 kthread_entry:
     push ebx
     call eax
-    mov  eax, 0
-    xor  ebx, ebx
-    int  0x7F ; sys_exit(0)
+    mov ebx, eax
+    mov  eax, 0 ; sys_exit
+    int  0x7F
 .halt:
     hlt
     jmp .halt

@@ -88,7 +88,7 @@ fn _paging_get_table(vaddr: u32, create: bool) []u32 {
     var pd_i: i32 = pd_index(vaddr);
     if ((paging_kernel_dir[pd_i] & PG_PRESENT) != 0) {
         if (paging_set) {
-            return as([]u32, 0xFFC00000 + (pd_i << 12));
+            return as([]u32, PT_BASE + (pd_i << 12));
         } else {
             return as([]u32, paging_kernel_dir[pd_i] & ~0xFFF);
         }
@@ -103,7 +103,7 @@ fn _paging_get_table(vaddr: u32, create: bool) []u32 {
 
     if (paging_set) {
         paging_switch_directory(paging_kernel_dir_phys);
-        var addr: []u32 = as([]u32, 0xFFC00000 + (pd_i << 12));
+        var addr: []u32 = as([]u32, PT_BASE + (pd_i << 12));
         memset(addr, 0, PAGE_SIZE);
         return addr;
     }

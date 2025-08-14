@@ -85,7 +85,7 @@ fn proc_schedule(r: *regs_t) void {
     if (proc_current != idle_proc && proc_current.state == P_RUNNABLE) {
         deque_push_back(&proc_runq, as(*DequeNode, proc_current));
     }
-    "switch from %d to %d\n", proc_current.pid, next.pid;
+
     proc_switch_to(next);
 }
 
@@ -125,16 +125,17 @@ fn proc_init_frame(
 }
 
 fn proc_create(
+    parent: *Process,
     entry: fn(args: *void) u32,
-    args: *void,
-    cr3: u32
+    args: *void
 ) *Process {
     var p: *Process = malloc(sizeof(Process));
     memset(p, 0, sizeof(Process));
     p.pid = proc_next_pid;
     p.state = P_RUNNABLE;
+    p.parent = parent;
     proc_next_pid += 1;
-    p.cr3 = cr3;
+    p.cr3 = paging_kernel_dir_phys;
 
     p.kstack_base = malloc(KSTACK_SIZE);
     p.kstack_size = KSTACK_SIZE;
@@ -146,6 +147,11 @@ fn proc_create(
         KERNEL_CS,
         KERNEL_DS
     );
+
+    if (parent != null) {
+        p.sibling_next = parent.child_head;
+        parent.child_head = p;
+    }
 
     return p;
 }
@@ -216,10 +222,8 @@ fn idle_main(args: *void) u32 {
 fn proc_init(init: fn(args: *void) u32) void {
     deque_init(&proc_runq);
 
-    var cr3: u32 = paging_kernel_dir_phys;
-
-    idle_proc = proc_create(idle_main, null, cr3);
-    init_proc = proc_create(init, null, cr3);
+    idle_proc = proc_create(null, idle_main, null);
+    init_proc = proc_create(null, init, null);
 
     proc_current = init_proc;
 }

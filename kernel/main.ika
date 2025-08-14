@@ -149,15 +149,19 @@ fn fs_test() void {
     builtin_cat("/etc/hostname");
 }
 
+fn prog_main(args: *void) u32 {
+    "[child] pid=%d\n", getpid();
+
+    return 69;
+}
+
 fn init_main(args: *void) u32 {
-    var pid: i32 = syscall0(SYS_FORK);
-    if (pid == 0) {
-        "[child] pid=%d\n", syscall0(SYS_GETPID);
-    } else if (pid > 0) {
-        "[parent] pid=%d, child=%d\n", syscall0(SYS_GETPID), pid;
-    } else {
-        "Fork failed\n";
-    }
+    var pid: i32 = spawn(prog_main, null);
+    "[parent] pid=%d, child=%d\n", getpid(), pid;
+
+    var status: u32;
+    waitpid(pid, &status);
+    "[parent] child exit with %d\n", status;
 
     while (true) {
         asm("hlt");

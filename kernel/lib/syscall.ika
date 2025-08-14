@@ -4,7 +4,7 @@
 enum {
     SYS_EXIT,
     SYS_GETPID,
-    SYS_FORK,
+    SYS_SPAWN,
     SYS_WAITPID,
     SYS_COUNT,
 };
@@ -29,6 +29,37 @@ fn syscall1(number: u32, arg1: u32) u32 {
 
     asm("mov %eax, -4(%ebp)"); // result
     return result;
+}
+
+fn syscall2(number: u32, arg1: u32, arg2: u32) u32 {
+    var result: u32;
+    asm("push %ebx");
+
+    asm("mov 8(%ebp), %eax"); // number
+    asm("mov 12(%ebp), %ebx"); // arg1
+    asm("mov 16(%ebp), %ecx"); // arg1
+    asm("int $0x7F");
+
+    asm("pop %ebx");
+
+    asm("mov %eax, -4(%ebp)"); // result
+    return result;
+}
+
+fn exit(status: i32) void {
+    syscall1(SYS_EXIT, status);
+}
+
+fn getpid() i32 {
+    return syscall0(SYS_GETPID);
+}
+
+fn spawn(entry: fn(args: *void) u32, args: *void) i32 {
+    return syscall2(SYS_SPAWN, as(u32, entry), as(u32, args));
+}
+
+fn waitpid(pid: i32, status: *u32) i32 {
+    return syscall2(SYS_WAITPID, pid, as(u32, status));
 }
 
 #endif
