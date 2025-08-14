@@ -2,6 +2,7 @@
 #define CONSOLE
 
 #include "vga_text.ika"
+#include "spinlock.ika"
 
 enum {
     CSI_IDLE,
@@ -118,11 +119,16 @@ fn console_putc(c: u8) void {
     }
 }
 
+var console_lock: spinlock_t;
+
 fn console_write(buf: []u8, len: u32) void {
     var i: u32 = 0;
+
+    spin_lock(&console_lock);
     while (i < len) : (i += 1) {
         console_putc(buf[i]);
     }
+    spin_unlock(&console_lock);
 }
 
 fn console_clear() void {

@@ -116,7 +116,6 @@ fn sys_waitpid(r: *regs_t) u32 {
 
 fn syscall_isr(r: *regs_t) void {
     if (r.eax < SYS_COUNT) {
-        interrupt_disable();
         r.eax = syscall_handlers[r.eax](r);
         return;
     }

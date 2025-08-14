@@ -79,6 +79,7 @@ fn kbd_test() void {
     while (true) {
         var c: i32 = getchar();
         putchar(c);
+        flush();
         if (c == '\n') {
             break;
         }
@@ -114,6 +115,8 @@ fn builtin_cat(path: []u8) void {
         buf[n] = 0;
         puts(&buf);
     }
+
+    flush();
 
     if (n < 0) {
         "\ncat: read error\n";

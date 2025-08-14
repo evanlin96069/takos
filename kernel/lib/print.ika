@@ -7,8 +7,24 @@
 #include "va_arg.ika"
 #include "ctype.ika"
 
+const PRINT_BUF_SIZE = 512;
+var _out_buf: [PRINT_BUF_SIZE]u8;
+var _out_len: u32 = 0;
+
+fn flush() void {
+    if (_out_len != 0) {
+        console_write(&_out_buf, _out_len);
+        _out_len = 0;
+    }
+}
+
 fn putchar(c: u8) i32 {
-    console_putc(c);
+    _out_buf[_out_len] = c;
+    _out_len += 1;
+    if (_out_len == PRINT_BUF_SIZE || c == '\n') {
+        flush();
+    }
+
     return c;
 }
 
@@ -17,14 +33,18 @@ fn puts(s: []u8) i32 {
         return 0;
     }
 
-    var len: u32 = strlen(s);
-    console_write(s, len);
+    var len: i32 = 0;
+    while (*s != 0) : (s += 1) {
+        putchar(*s);
+        len += 1;
+    }
 
     return len;
 }
 
 fn vprintf(fmt: []u8, ap: va_list) i32 {
     var count: i32 = 0;
+
     while (*fmt != 0) : (fmt += 1) {
         if (*fmt != '%') {
             putchar(*fmt);
@@ -73,6 +93,7 @@ fn vprintf(fmt: []u8, ap: va_list) i32 {
         }
     }
 
+    flush();
     return count;
 }
 

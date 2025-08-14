@@ -1,0 +1,33 @@
+#if !SPINLOCK
+#define SPINLOCK
+
+struct spinlock_t {
+    v: u32,
+};
+
+fn atomic_swap(x: *u32, v: u32) u32 {
+    var old: u32;
+    asm("mov 8(%ebp), %eax"); // x
+    asm("mov 12(%ebp), %edx"); // v
+    asm("xchg %edx, (%eax)");
+    asm("mov %edx, -4(%ebp)"); // old
+    return old;
+}
+
+fn cpu_relax() void {
+    asm("pause");
+}
+
+fn spin_lock(l: *spinlock_t) void {
+    while (atomic_swap(&l.v, 1) != 0) {
+        while (l.v != 0) {
+            cpu_relax();
+        }
+    }
+}
+
+fn spin_unlock(l: *spinlock_t) void {
+    l.v = 0;
+}
+
+#endif
