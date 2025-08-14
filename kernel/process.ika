@@ -214,9 +214,7 @@ fn proc_reparent_children(parent: *Process, adopt: *Process) void {
 }
 
 fn idle_main(args: *void) u32 {
-    while (true) {
-        asm("hlt");
-    }
+    while (true) {}
 }
 
 fn proc_init(init: fn(args: *void) u32) void {
