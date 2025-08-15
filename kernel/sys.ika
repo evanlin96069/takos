@@ -49,7 +49,7 @@ fn _fork_child_frame(r: *regs_t, child_stack_top: []u8) u32 {
     sp -= 1; *sp = r.eip;           // EIP
 
     sp -= 1; *sp = 0;               // err_code
-    sp -= 1; *sp = 0;               // int_no 
+    sp -= 1; *sp = 0;               // int_no
 
     sp -= 1; *sp = 0;               // EAX = 0 in child
     sp -= 1; *sp = r.ecx;

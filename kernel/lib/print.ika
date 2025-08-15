@@ -6,25 +6,12 @@
 #include "string.ika"
 #include "va_arg.ika"
 #include "ctype.ika"
+#include "spinlock.ika"
 
-const PRINT_BUF_SIZE = 512;
-var _out_buf: [PRINT_BUF_SIZE]u8;
-var _out_len: u32 = 0;
-
-fn flush() void {
-    if (_out_len != 0) {
-        console_write(&_out_buf, _out_len);
-        _out_len = 0;
-    }
-}
+var print_lock: spinlock_t;
 
 fn putchar(c: u8) i32 {
-    _out_buf[_out_len] = c;
-    _out_len += 1;
-    if (_out_len == PRINT_BUF_SIZE || c == '\n') {
-        flush();
-    }
-
+    console_putc(c);
     return c;
 }
 
@@ -33,17 +20,19 @@ fn puts(s: []u8) i32 {
         return 0;
     }
 
-    var len: i32 = 0;
-    while (*s != 0) : (s += 1) {
-        putchar(*s);
-        len += 1;
-    }
+    var len: u32 = strlen(s);
+
+    spin_lock(&print_lock);
+    console_write(s, len);
+    spin_unlock(&print_lock);
 
     return len;
 }
 
 fn vprintf(fmt: []u8, ap: va_list) i32 {
     var count: i32 = 0;
+
+    spin_lock(&print_lock);
 
     while (*fmt != 0) : (fmt += 1) {
         if (*fmt != '%') {
@@ -61,21 +50,34 @@ fn vprintf(fmt: []u8, ap: va_list) i32 {
             if (s == null) {
                 s = "(null)";
             }
-            count += puts(s);
+
+            var len: u32 = strlen(s);
+            console_write(s, len);
+            count += len;
         } else if (*fmt == '%') {
             putchar('%');
             count += 1;
         } else if (*fmt == 'd') {
             var n: i32 = *as(*i32, va_arg(&ap, sizeof(i32)));
             var buf: [16]u8;
-            count += puts(itoa(n, &buf, 10));
+
+            var s: []u8 = itoa(n, &buf, 10);
+            var len: u32 = strlen(s);
+            console_write(s, len);
+            count += len;
         } else if (*fmt == 'u') {
             var n: u32 = *as(*u32, va_arg(&ap, sizeof(u32)));
             var buf: [16]u8;
-            count += puts(utoa(n, &buf, 10));
+
+            var s: []u8 = itoa(n, &buf, 10);
+            var len: u32 = strlen(s);
+            console_write(s, len);
+            count += len;
         } else if (*fmt == 'p' || *fmt == 'x' || *fmt == 'X') {
             if (*fmt == 'p') {
-                count += puts("0x");
+                putchar('0');
+                putchar('x');
+                count += 2;
             }
             var n: u32 = *as(*u32, va_arg(&ap, sizeof(u32)));
             var buf: [16]u8;
@@ -85,7 +87,10 @@ fn vprintf(fmt: []u8, ap: va_list) i32 {
             while (s[i] != 0) : (i += 1) {
                 s[i] = toupper(s[i]);
             }
-            count += puts(s);
+
+            var len: u32 = strlen(s);
+            console_write(s, len);
+            count += len;
         } else {
             putchar('%');
             putchar(*fmt);
@@ -93,7 +98,8 @@ fn vprintf(fmt: []u8, ap: va_list) i32 {
         }
     }
 
-    flush();
+    spin_unlock(&print_lock);
+
     return count;
 }
 
